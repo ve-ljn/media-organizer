@@ -2,6 +2,10 @@
 
 A keyboard-driven desktop app for quickly sorting images and videos into folders. Built with Electron + React + Vite.
 
+<img width="1275" height="796" alt="image" src="https://github.com/user-attachments/assets/6fd086a8-20de-4155-86db-9eeffae31f9d" />
+
+<img width="1275" height="795" alt="image" src="https://github.com/user-attachments/assets/207372d1-2f89-46c5-9a4b-7f1f892c6522" />
+
 ## Features
 
 - **Hotkey sorting** — map up to 9 destination folders to keys 1–9. Press a key to move the current file and auto-advance
