@@ -1,5 +1,9 @@
 export function toFileUrl(filePath) {
-  return 'file:///' + filePath.replace(/\\/g, '/')
+  // Encode each segment to handle spaces, #, ?, % in file/folder names.
+  // Skip the first segment (drive letter e.g. "C:") to preserve the colon.
+  return 'file:///' + filePath.replace(/\\/g, '/').split('/').map((seg, i) =>
+    i === 0 ? seg : encodeURIComponent(seg)
+  ).join('/')
 }
 
 // m:ss — for timeline labels and time display

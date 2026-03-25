@@ -67,7 +67,7 @@ ipcMain.handle('dialog:selectFolder', async () => {
 
 // List all supported media files in a folder (non-recursive, sorted by name)
 ipcMain.handle('media:getFiles', async (_event, folderPath) => {
-  const entries = fs.readdirSync(folderPath, { withFileTypes: true })
+  const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
   const files = []
   for (const entry of entries) {
     if (!entry.isFile()) continue
@@ -82,7 +82,18 @@ ipcMain.handle('media:getFiles', async (_event, folderPath) => {
   return files.sort((a, b) => a.name.localeCompare(b.name))
 })
 
-// Move a file to a destination folder (handles name conflicts)
+// Move a file to a destination folder (handles name conflicts and cross-drive moves)
+async function moveWithFallback(src, dest) {
+  try {
+    await fs.promises.rename(src, dest)
+  } catch (err) {
+    if (err.code !== 'EXDEV') throw err
+    // Cross-device: copy then delete
+    await fs.promises.copyFile(src, dest)
+    await fs.promises.unlink(src)
+  }
+}
+
 ipcMain.handle('media:move', async (_event, { filePath, destFolder }) => {
   const fileName = path.basename(filePath)
   let destPath = path.join(destFolder, fileName)
@@ -97,11 +108,11 @@ ipcMain.handle('media:move', async (_event, { filePath, destFolder }) => {
     }
   }
 
-  fs.renameSync(filePath, destPath)
+  await moveWithFallback(filePath, destPath)
 
   const sidecar = filePath + '.meta.json'
   if (fs.existsSync(sidecar)) {
-    fs.renameSync(sidecar, destPath + '.meta.json')
+    await moveWithFallback(sidecar, destPath + '.meta.json')
   }
 
   return destPath
@@ -183,7 +194,7 @@ ipcMain.handle('media:saveFrame', async (_event, { filePath, dataUrl }) => {
   const outPath = path.join(dir, `${base}_frame_${timestamp}.png`)
 
   const base64 = dataUrl.replace(/^data:image\/png;base64,/, '')
-  fs.writeFileSync(outPath, Buffer.from(base64, 'base64'))
+  await fs.promises.writeFile(outPath, Buffer.from(base64, 'base64'))
 
   return { outPath, name: path.basename(outPath) }
 })
@@ -206,10 +217,7 @@ ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
 // Get persisted hotkey config
 ipcMain.handle('config:getHotkeys', () => {
   const fallback = Array(9).fill(null).map(() => ({ folder: null, label: '' }))
-  const hotkeys = store.get('hotkeys', fallback)
-  // Always ensure slot 1 has a default if it was never configured
-  if (!hotkeys[0]?.folder) hotkeys[0] = { folder: 'C:\\', label: 'C:' }
-  return hotkeys
+  return store.get('hotkeys', fallback)
 })
 
 // Save hotkey config

@@ -140,11 +140,16 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   const saveRating = useCallback(async (newRating, file) => {
     if (!file) return
-    await window.api.setRating(file.path, newRating)
-    setRatingsMap(prev => ({ ...prev, [file.path]: newRating }))
-    const stars = newRating === 0 ? 'unrated' : '★'.repeat(newRating) + '☆'.repeat(5 - newRating)
-    addLog(`Rated  ${file.name}  ${stars}`, 'rate')
-  }, [addLog])
+    try {
+      await window.api.setRating(file.path, newRating)
+      setRatingsMap(prev => ({ ...prev, [file.path]: newRating }))
+      const stars = newRating === 0 ? 'unrated' : '★'.repeat(newRating) + '☆'.repeat(5 - newRating)
+      addLog(`Rated  ${file.name}  ${stars}`, 'rate')
+    } catch (e) {
+      showToast(`Rating failed: ${e.message}`)
+      addLog(`Rating failed: ${e.message}`, 'delete')
+    }
+  }, [addLog, showToast])
 
   const executeSplits = useCallback(async () => {
     if (!current || splitTimestamps.length === 0) return
