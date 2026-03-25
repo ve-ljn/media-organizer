@@ -13,21 +13,16 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const [imageIndex, setImageIndex] = useState(0)
   const [videoIndex, setVideoIndex] = useState(0)
 
-  const [notes, setNotes] = useState('')
-  const [showNotes, setShowNotes] = useState(false)
-  const [noteSaved, setNoteSaved] = useState(false)
   const [splitTimestamps, setSplitTimestamps] = useState([])
   const [isSplitting, setIsSplitting] = useState(false)
   const [toast, setToast] = useState('')
 
-  const [rating, setRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
   const [ratingFilter, setRatingFilter] = useState(null)
   const [ratingsMap, setRatingsMap] = useState({})
   const [slideshow, setSlideshow] = useState(false)
 
   const initialFilesRef = useRef(initialFiles)
-  const notesRef = useRef(null)
   const toastTimer = useRef(null)
   const videoPlayerRef = useRef(null)
   const viewerMediaRef = useRef(null)
@@ -44,6 +39,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     return files.filter(f => (ratingsMap[f.path] || 0) >= ratingFilter)
   }, [files, ratingsMap, ratingFilter])
   const filteredIndex = filteredFiles.findIndex(f => f.path === current?.path)
+  const rating = ratingsMap[current?.path] || 0
 
   // ── Toast ─────────────────────────────────────────────────
   const showToast = useCallback((msg) => {
@@ -65,13 +61,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
   }, [tab])
 
-  // ── Load metadata when file changes ──────────────────────
+  // ── Reset per-file state when file changes ────────────────
   useEffect(() => {
-    if (!current) return
-    window.api.getNotes(current.path).then(data => {
-      setNotes(data.notes || '')
-      setRating(data.rating || 0)
-    })
     setSplitTimestamps([])
   }, [current?.path])
 
@@ -90,12 +81,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   }, [current?.path])
 
   useEffect(() => {
-    if (showNotes) setTimeout(() => notesRef.current?.focus(), 50)
-  }, [showNotes])
-
-  useEffect(() => {
     setSplitTimestamps([])
-    setShowNotes(false)
     setSlideshow(false)
   }, [tab])
 
@@ -152,14 +138,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
   }, [current, files, index, tab, releaseVideo, advance, showToast, addLog])
 
-  const saveNotes = useCallback(async () => {
-    if (!current) return
-    await window.api.saveNotes({ filePath: current.path, notes })
-    setNoteSaved(true)
-    setTimeout(() => setNoteSaved(false), 1500)
-    addLog(`Notes saved  →  ${current.name}`, 'save')
-  }, [current, notes, addLog])
-
   const saveRating = useCallback(async (newRating, file) => {
     if (!file) return
     await window.api.setRating(file.path, newRating)
@@ -197,15 +175,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     const onKey = (e) => {
       const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'
       if (inInput) {
-        if (e.key === 'Escape') { e.target.blur(); setShowNotes(false) }
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveNotes() }
+        if (e.key === 'Escape') e.target.blur()
         return
       }
 
       if (e.altKey && e.key >= '0' && e.key <= '5') {
         e.preventDefault()
         const newRating = parseInt(e.key)
-        setRating(newRating)
         saveRating(newRating, current)
         showToast(newRating === 0 ? 'Rating cleared' : '★'.repeat(newRating) + '☆'.repeat(5 - newRating))
         return
@@ -239,9 +215,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         case 'd': case 'D': case 'Delete':
           deleteFile()
           break
-        case 'n': case 'N':
-          setShowNotes(v => !v)
-          break
         case 'l': case 'L':
           if (tab === 'videos') {
             setSlideshow(v => {
@@ -267,14 +240,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         case '0':
           if (!e.altKey) resetZoom()
           break
-        case 'u': case 'U':
-          if (tab === 'images' && current) {
-            showToast('⏳ Upscaling…')
-            window.api.upscaleImage(current.path)
-              .then(({ name }) => { showToast(`✅ Saved: ${name}`); addLog(`Upscaled  ${current.name}  →  ${name}`, 'save') })
-              .catch(err => { showToast(`❌ Upscale failed: ${err.message}`); addLog(`Upscale failed: ${err.message}`, 'delete') })
-          }
-          break
         case 'f': case 'F':
           if (tab === 'videos' && videoPlayerRef.current) {
             const dataUrl = videoPlayerRef.current.captureFrame()
@@ -286,7 +251,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           break
         case 'Escape':
           if (zoom > 1) { resetZoom(); break }
-          setShowNotes(false)
           setSplitTimestamps([])
           break
         default:
@@ -295,7 +259,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveNotes, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -358,7 +322,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
                   onMouseLeave={() => setHoverRating(0)}
                   onClick={() => {
                     const newRating = n === rating ? 0 : n
-                    setRating(newRating)
                     saveRating(newRating, current)
                     showToast(newRating === 0 ? 'Rating cleared' : '★'.repeat(newRating) + '☆'.repeat(5 - newRating))
                   }}
@@ -390,9 +353,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           </button>
         )}
 
-        <button className={`btn-notes-toggle ${showNotes ? 'active' : ''}`} onClick={() => setShowNotes(v => !v)}>
-          📝 Notes
-        </button>
         <button className={`btn-console-toggle ${showConsole ? 'active' : ''}`} onClick={() => setShowConsole(v => !v)} title="Activity log (`)">
           📋 Log {logEntries.length > 0 && <span className="log-count">{logEntries.length}</span>}
         </button>
@@ -452,20 +412,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           )}
         </div>
 
-        {/* Notes panel */}
-        {showNotes && (
-          <div className="notes-panel">
-            <div className="notes-header">
-              <span>Notes</span>
-              <button className="notes-close" onClick={() => setShowNotes(false)}>✕</button>
-            </div>
-            <textarea ref={notesRef} className="notes-textarea" value={notes} onChange={e => setNotes(e.target.value)} placeholder="Add notes…&#10;&#10;Ctrl+S to save." />
-            <div className="notes-footer">
-              <span className="notes-hint">Ctrl+S to save</span>
-              <button className="btn-save-notes" onClick={saveNotes}>{noteSaved ? 'Saved ✓' : 'Save'}</button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Activity console */}
@@ -522,10 +468,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           <div className="action-hints">
             <span className="action-hint"><kbd>←</kbd><kbd>→</kbd> Navigate</span>
             <span className="action-hint"><kbd>D</kbd> Delete</span>
-            <span className="action-hint"><kbd>N</kbd> Notes</span>
             <span className="action-hint"><kbd>Alt+1–5</kbd> Rate</span>
             <span className="action-hint"><kbd>scroll</kbd> Zoom</span>
-            {tab === 'images' && <span className="action-hint"><kbd>U</kbd> Upscale</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>F</kbd> Snapshot</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}

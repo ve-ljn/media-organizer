@@ -6,8 +6,6 @@ const Store = require('electron-store')
 const ffmpeg = require('fluent-ffmpeg')
 const ffmpegPath = require('ffmpeg-static')
 const ffprobePath = require('ffprobe-static').path
-const sharp = require('sharp')
-
 ffmpeg.setFfmpegPath(ffmpegPath)
 ffmpeg.setFfprobePath(ffprobePath)
 
@@ -138,17 +136,6 @@ ipcMain.handle('media:delete', async (_event, filePath) => {
   return true
 })
 
-// Read notes sidecar for a file
-ipcMain.handle('notes:get', async (_event, filePath) => {
-  return { notes: '', ...readSidecar(filePath) }
-})
-
-// Write notes sidecar for a file
-ipcMain.handle('notes:save', async (_event, { filePath, notes }) => {
-  writeSidecar(filePath, { notes })
-  return true
-})
-
 // Split a video at given timestamps (array of seconds) using ffmpeg -c copy (no re-encode)
 ipcMain.handle('video:split', async (_event, { filePath, timestamps }) => {
   return new Promise((resolve, reject) => {
@@ -186,20 +173,6 @@ ipcMain.handle('video:split', async (_event, { filePath, timestamps }) => {
       processSegment(0)
     })
   })
-})
-
-// Upscale an image 2x using Lanczos resampling
-ipcMain.handle('media:upscale', async (_event, { filePath }) => {
-  const ext = path.extname(filePath).toLowerCase()
-  const base = path.basename(filePath, path.extname(filePath))
-  const dir = path.dirname(filePath)
-  const outPath = path.join(dir, `${base}_upscaled${ext}`)
-
-  const image = sharp(filePath)
-  const { width, height } = await image.metadata()
-  await image.resize(width * 2, height * 2, { kernel: sharp.kernel.lanczos3 }).toFile(outPath)
-
-  return { outPath, name: path.basename(outPath) }
 })
 
 // Save a raw PNG data URL to disk (for video frame snapshots)
