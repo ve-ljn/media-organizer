@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('api', {
   upscaleImage: (filePath) => ipcRenderer.invoke('media:upscale', { filePath }),
   saveFrame: (filePath, dataUrl) => ipcRenderer.invoke('media:saveFrame', { filePath, dataUrl }),
   setRating: (filePath, rating) => ipcRenderer.invoke('meta:setRating', { filePath, rating }),
+  getAllRatings: (filePaths) => ipcRenderer.invoke('meta:getAllRatings', filePaths),
 })

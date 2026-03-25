@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { execSync } = require('child_process')
 const Store = require('electron-store')
 const ffmpeg = require('fluent-ffmpeg')
 const ffmpegPath = require('ffmpeg-static')
@@ -94,11 +95,24 @@ ipcMain.handle('media:move', async (_event, { filePath, destFolder }) => {
 })
 
 // Send a file to the Recycle Bin
+// Falls back to PowerShell Shell.Application if shell.trashItem fails (common on Windows)
+async function trashFile(filePath) {
+  try {
+    await shell.trashItem(filePath)
+  } catch {
+    const escaped = filePath.replace(/'/g, "''")
+    execSync(
+      `powershell -NoProfile -NonInteractive -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`,
+      { windowsHide: true }
+    )
+  }
+}
+
 ipcMain.handle('media:delete', async (_event, filePath) => {
-  await shell.trashItem(filePath)
+  await trashFile(filePath)
   const sidecar = filePath + '.meta.json'
   if (fs.existsSync(sidecar)) {
-    await shell.trashItem(sidecar)
+    await trashFile(sidecar)
   }
   return true
 })
@@ -201,6 +215,25 @@ ipcMain.handle('meta:setRating', async (_event, { filePath, rating }) => {
   }
   fs.writeFileSync(sidecarPath, JSON.stringify({ ...existing, rating }, null, 2))
   return true
+})
+
+// Batch-read ratings for a list of file paths
+ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
+  const result = {}
+  for (const filePath of filePaths) {
+    const sidecarPath = filePath + '.meta.json'
+    if (fs.existsSync(sidecarPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'))
+        result[filePath] = data.rating || 0
+      } catch {
+        result[filePath] = 0
+      }
+    } else {
+      result[filePath] = 0
+    }
+  }
+  return result
 })
 
 // Get persisted hotkey config

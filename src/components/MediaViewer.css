@@ -191,6 +191,47 @@
   filter: drop-shadow(0 0 4px rgba(245, 197, 24, 0.5));
 }
 
+/* Rating filter */
+.rating-filter {
+  display: flex;
+  gap: 2px;
+  background: var(--bg3);
+  border-radius: 7px;
+  padding: 3px;
+  flex-shrink: 0;
+}
+
+.rating-filter-btn {
+  padding: 3px 9px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.rating-filter-btn:hover {
+  color: var(--text);
+}
+
+.rating-filter-btn.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Filter badge in progress */
+.filter-badge {
+  margin-left: 5px;
+  font-size: 10px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-weight: 600;
+}
+
 /* Console toggle button */
 .btn-console-toggle {
   background: transparent;

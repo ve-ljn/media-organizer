@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import VideoPlayer from './VideoPlayer'
 import './MediaViewer.css'
 
@@ -40,6 +40,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const [rating, setRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
 
+  // Rating filter: null = show all, 4 = 4★+, 5 = 5★ only
+  const [ratingFilter, setRatingFilter] = useState(null)
+  const [ratingsMap, setRatingsMap] = useState({})
+
   // Activity log
   const [logEntries, setLogEntries] = useState([])
   const [showConsole, setShowConsole] = useState(false)
@@ -65,6 +69,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const index = tab === 'images' ? imageIndex : videoIndex
   const setIndex = tab === 'images' ? setImageIndex : setVideoIndex
   const current = files[index]
+
+  // Filtered view (for progress display and filter-aware navigation)
+  const filteredFiles = useMemo(() => {
+    if (!ratingFilter) return files
+    return files.filter(f => (ratingsMap[f.path] || 0) >= ratingFilter)
+  }, [files, ratingsMap, ratingFilter])
+  const filteredIndex = filteredFiles.findIndex(f => f.path === current?.path)
 
   const releaseVideo = async () => {
     if (tab === 'videos' && videoPlayerRef.current) {
@@ -93,6 +104,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     setSplitTimestamps([])
   }, [current?.path])
 
+  // Bulk-load all ratings on mount so filter can work immediately
+  useEffect(() => {
+    window.api.getAllRatings(initialFiles.map(f => f.path)).then(setRatingsMap)
+  }, [])
+
   // Reset pan (not zoom) when file changes
   useEffect(() => {
     setPan({ x: 0, y: 0 })
@@ -119,17 +135,40 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   // ── Navigation ────────────────────────────────────────────
   const advance = useCallback((newFiles, fromIndex) => {
-    setIndex(Math.max(0, Math.min(fromIndex, newFiles.length - 1)))
-  }, [setIndex])
+    if (ratingFilter) {
+      let next = fromIndex
+      while (next < newFiles.length && (ratingsMap[newFiles[next]?.path] || 0) < ratingFilter) next++
+      if (next >= newFiles.length) {
+        next = fromIndex - 1
+        while (next >= 0 && (ratingsMap[newFiles[next]?.path] || 0) < ratingFilter) next--
+      }
+      setIndex(Math.max(0, Math.min(Math.max(next, 0), newFiles.length - 1)))
+    } else {
+      setIndex(Math.max(0, Math.min(fromIndex, newFiles.length - 1)))
+    }
+  }, [setIndex, ratingFilter, ratingsMap])
 
   const goNext = useCallback(() => {
-    if (index < files.length - 1) setIndex(i => i + 1)
-    else { setSlideshow(false); showToast('End of files') }
-  }, [index, files.length, setIndex, showToast])
+    if (ratingFilter) {
+      let next = index + 1
+      while (next < files.length && (ratingsMap[files[next]?.path] || 0) < ratingFilter) next++
+      if (next < files.length) setIndex(next)
+      else { setSlideshow(false); showToast('End of filtered files') }
+    } else {
+      if (index < files.length - 1) setIndex(i => i + 1)
+      else { setSlideshow(false); showToast('End of files') }
+    }
+  }, [index, files, setIndex, showToast, ratingFilter, ratingsMap])
 
   const goPrev = useCallback(() => {
-    if (index > 0) setIndex(i => i - 1)
-  }, [index, setIndex])
+    if (ratingFilter) {
+      let prev = index - 1
+      while (prev >= 0 && (ratingsMap[files[prev]?.path] || 0) < ratingFilter) prev--
+      if (prev >= 0) setIndex(prev)
+    } else {
+      if (index > 0) setIndex(i => i - 1)
+    }
+  }, [index, files, setIndex, ratingFilter, ratingsMap])
 
   // ── File operations ───────────────────────────────────────
   const moveFile = useCallback(async (hotkeyIndex) => {
@@ -153,15 +192,19 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   const deleteFile = useCallback(async () => {
     if (!current) return
-    if (!window.confirm(`Delete "${current.name}"?\n\nThis will send it to the Recycle Bin.`)) return
-    await releaseVideo()
-    await window.api.deleteFile(current.path)
-    showToast('Deleted')
-    addLog(`Deleted  ${current.name}`, 'delete')
-    const newFiles = files.filter((_, i) => i !== index)
-    if (tab === 'images') setImageFiles(newFiles)
-    else setVideoFiles(newFiles)
-    advance(newFiles, index)
+    try {
+      await releaseVideo()
+      await window.api.deleteFile(current.path)
+      showToast('Deleted')
+      addLog(`Deleted  ${current.name}`, 'delete')
+      const newFiles = files.filter((_, i) => i !== index)
+      if (tab === 'images') setImageFiles(newFiles)
+      else setVideoFiles(newFiles)
+      advance(newFiles, index)
+    } catch (e) {
+      showToast(`Error: ${e.message}`)
+      addLog(`Error deleting ${current.name}: ${e.message}`, 'delete')
+    }
   }, [current, files, index, tab, advance, showToast, addLog])
 
   const saveNotes = useCallback(async () => {
@@ -175,6 +218,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const saveRating = useCallback(async (newRating, file) => {
     if (!file) return
     await window.api.setRating(file.path, newRating)
+    setRatingsMap(prev => ({ ...prev, [file.path]: newRating }))
     const stars = newRating === 0 ? 'unrated' : '★'.repeat(newRating) + '☆'.repeat(5 - newRating)
     addLog(`Rated  ${file.name}  ${stars}`, 'rate')
   }, [addLog])
@@ -397,6 +441,26 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
             <div className="viewer-filename" title={current?.path}>{current?.name}</div>
             <div className="viewer-type">{current?.ext?.replace('.', '').toUpperCase()}</div>
 
+            {/* Rating filter */}
+            <div className="rating-filter" title="Filter by rating">
+              {[null, 4, 5].map(val => (
+                <button
+                  key={val ?? 'all'}
+                  className={`rating-filter-btn ${ratingFilter === val ? 'active' : ''}`}
+                  onClick={() => {
+                    setRatingFilter(val)
+                    if (val) {
+                      const firstMatch = files.findIndex(f => (ratingsMap[f.path] || 0) >= val)
+                      if (firstMatch >= 0) setIndex(firstMatch)
+                      else showToast(`No ${val}★+ files`)
+                    }
+                  }}
+                >
+                  {val === null ? 'All' : val === 4 ? '4★+' : '5★'}
+                </button>
+              ))}
+            </div>
+
             {/* Star rating */}
             <div className="star-rating" title="Alt+1–5 to rate, Alt+0 to clear">
               {[1,2,3,4,5].map(n => (
@@ -415,7 +479,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
               ))}
             </div>
 
-            <div className="viewer-progress">{index + 1} / {files.length}</div>
+            <div className="viewer-progress">
+              {ratingFilter ? `${Math.max(0, filteredIndex + 1)} / ${filteredFiles.length}` : `${index + 1} / ${files.length}`}
+              {ratingFilter && <span className="filter-badge">{ratingFilter}★+</span>}
+            </div>
             <div className="viewer-progbar">
               <div className="viewer-progfill" style={{ width: `${progressPct}%` }} />
             </div>
