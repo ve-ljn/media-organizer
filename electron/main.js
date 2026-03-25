@@ -5,12 +5,14 @@ const { execSync } = require('child_process')
 const Store = require('electron-store')
 const ffmpeg = require('fluent-ffmpeg')
 const ffmpegPath = require('ffmpeg-static')
+const ffprobePath = require('ffprobe-static').path
 const sharp = require('sharp')
 
 ffmpeg.setFfmpegPath(ffmpegPath)
+ffmpeg.setFfprobePath(ffprobePath)
 
 const store = new Store()
-const isDev = !app.isPackaged
+const isDev = !app.isPackaged && !fs.existsSync(path.join(__dirname, '../dist/index.html'))
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif']
 const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.m4v']

@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-app/
 .env
 Thumbs.db
 .DS_Store
