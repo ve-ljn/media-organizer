@@ -1,0 +1,170 @@
+.vp-root {
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.vp-video {
+  width: 100%;
+  max-height: 62vh;
+  border-radius: 6px;
+  background: #000;
+  cursor: pointer;
+  display: block;
+}
+
+.vp-controls {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+}
+
+.vp-play {
+  background: transparent;
+  color: var(--text);
+  font-size: 18px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.vp-play:hover {
+  background: var(--bg3);
+}
+
+.vp-timeline {
+  flex: 1;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.vp-track {
+  width: 100%;
+  height: 5px;
+  background: var(--bg3);
+  border-radius: 3px;
+  position: relative;
+  transition: height 0.1s;
+}
+
+.vp-timeline:hover .vp-track {
+  height: 7px;
+}
+
+.vp-progress {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  pointer-events: none;
+}
+
+.vp-cursor {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 13px;
+  height: 13px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.vp-split-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 3px;
+  height: 20px;
+  background: var(--green);
+  border-radius: 2px;
+  cursor: pointer;
+  z-index: 2;
+  transition: background 0.15s;
+}
+
+.vp-split-mark:hover {
+  background: var(--danger);
+}
+
+.vp-split-mark:hover .vp-split-label {
+  color: var(--danger);
+}
+
+.vp-split-label {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--green);
+  white-space: nowrap;
+  font-family: monospace;
+  pointer-events: none;
+}
+
+.vp-time {
+  font-size: 12px;
+  color: var(--muted);
+  font-family: monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Loop region on timeline */
+.vp-loop-region {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: rgba(255, 180, 0, 0.25);
+  border-left: 2px solid rgba(255, 180, 0, 0.8);
+  border-right: 2px solid rgba(255, 180, 0, 0.8);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Loop badge above controls */
+.vp-loop-badge {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 180, 0, 0.12);
+  border: 1px solid rgba(255, 180, 0, 0.4);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: rgb(255, 200, 80);
+  font-family: monospace;
+  animation: loopPulse 2s ease-in-out infinite;
+}
+
+.vp-loop-hint {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: sans-serif;
+}
+
+@keyframes loopPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.vp-hint {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.vp-hint kbd {
+  color: var(--green);
+  border-color: #2a5a3a;
+}

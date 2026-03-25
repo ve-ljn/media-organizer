@@ -1,0 +1,274 @@
+.setup-root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 36px 48px;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.setup-header {
+  margin-bottom: 36px;
+}
+
+.setup-header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.setup-header p {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.setup-section {
+  margin-bottom: 36px;
+}
+
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  font-weight: 500;
+  margin-bottom: 14px;
+}
+
+/* Source folder row */
+.folder-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.folder-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.folder-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.folder-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+
+.folder-path {
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.file-count {
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 3px 10px;
+  border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-browse {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.btn-browse:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Hotkeys grid */
+.hotkeys-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.hotkey-slot {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  transition: border-color 0.15s;
+  min-height: 82px;
+}
+
+.hotkey-slot.filled {
+  border-color: var(--accent);
+}
+
+.hotkey-slot.empty {
+  opacity: 0.65;
+}
+
+.hk-badge {
+  width: 30px;
+  height: 30px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.filled .hk-badge {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.hk-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hk-label-input {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--text);
+  font-size: 13px;
+  margin-bottom: 5px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.hk-label-input:focus {
+  border-color: var(--accent);
+}
+
+.hk-path {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 8px;
+}
+
+.hk-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.hk-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  border-radius: 4px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  transition: all 0.15s;
+}
+
+.hk-btn:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.hk-btn.danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-add-folder {
+  width: 100%;
+  padding: 8px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  transition: all 0.15s;
+}
+
+.btn-add-folder:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Error */
+.setup-error {
+  background: #ff555522;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--danger);
+  font-size: 13px;
+  margin-top: -16px;
+  margin-bottom: 16px;
+}
+
+/* Footer */
+.setup-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 48px;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.setup-summary {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.setup-summary .accent {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.btn-start {
+  background: var(--accent);
+  color: #fff;
+  padding: 11px 36px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.15s;
+}
+
+.btn-start:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-start:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

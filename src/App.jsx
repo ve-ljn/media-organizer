@@ -1,0 +1,40 @@
+import { useState, useEffect } from 'react'
+import Setup from './components/Setup'
+import MediaViewer from './components/MediaViewer'
+
+const EMPTY_HOTKEYS = Array(9).fill(null).map((_, i) =>
+  i === 0 ? { folder: 'C:\\', label: 'C:' } : { folder: null, label: '' }
+)
+
+export default function App() {
+  const [view, setView] = useState('setup')
+  const [hotkeys, setHotkeys] = useState(EMPTY_HOTKEYS)
+  const [files, setFiles] = useState([])
+
+  useEffect(() => {
+    window.api.getHotkeys().then(setHotkeys)
+  }, [])
+
+  const handleStart = async (sourceFolder, updatedHotkeys) => {
+    const mediaFiles = await window.api.getMediaFiles(sourceFolder)
+    await window.api.setHotkeys(updatedHotkeys)
+    setHotkeys(updatedHotkeys)
+    setFiles(mediaFiles)
+    setView('organize')
+  }
+
+  return (
+    <div className="app">
+      {view === 'setup' && (
+        <Setup hotkeys={hotkeys} onStart={handleStart} />
+      )}
+      {view === 'organize' && (
+        <MediaViewer
+          files={files}
+          hotkeys={hotkeys}
+          onBackToSetup={() => setView('setup')}
+        />
+      )}
+    </div>
+  )
+}
