@@ -1,26 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import VideoPlayer from './VideoPlayer'
+import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
+import useZoomPan from '../hooks/useZoomPan'
+import useMediaNavigation from '../hooks/useMediaNavigation'
+import { toFileUrl, formatTimestamp } from '../utils'
 import './MediaViewer.css'
-
-function toFileUrl(filePath) {
-  return 'file:///' + filePath.replace(/\\/g, '/')
-}
-
-function formatTimestamp(seconds) {
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  const ms = Math.floor((seconds % 1) * 10)
-  return `${m}:${String(s).padStart(2, '0')}.${ms}`
-}
-
-function nowStr() {
-  const d = new Date()
-  return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`
-}
-
-const LOG_TYPES = { move: 'log-move', delete: 'log-delete', save: 'log-save', split: 'log-split', info: 'log-info', rate: 'log-rate' }
-
-let logIdCounter = 0
 
 export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetup }) {
   const [imageFiles, setImageFiles] = useState(initialFiles.filter(f => f.type === 'image'))
@@ -36,63 +20,50 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const [isSplitting, setIsSplitting] = useState(false)
   const [toast, setToast] = useState('')
 
-  // Rating (0 = unrated)
   const [rating, setRating] = useState(0)
   const [hoverRating, setHoverRating] = useState(0)
-
-  // Rating filter: null = show all, 4 = 4★+, 5 = 5★ only
   const [ratingFilter, setRatingFilter] = useState(null)
   const [ratingsMap, setRatingsMap] = useState({})
-
-  // Activity log
-  const [logEntries, setLogEntries] = useState([])
-  const [showConsole, setShowConsole] = useState(false)
-  const logEndRef = useRef(null)
-
-  // Slideshow
   const [slideshow, setSlideshow] = useState(false)
 
-  // Zoom & pan
-  const [zoom, setZoom] = useState(1)
-  const [pan, setPan] = useState({ x: 0, y: 0 })
-  const [dragActive, setDragActive] = useState(false)
-  const isDragging = useRef(false)
-  const dragStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
-
+  const initialFilesRef = useRef(initialFiles)
   const notesRef = useRef(null)
   const toastTimer = useRef(null)
   const videoPlayerRef = useRef(null)
   const viewerMediaRef = useRef(null)
   const minimapCanvasRef = useRef(null)
 
+  // ── Derived state ─────────────────────────────────────────
   const files = tab === 'images' ? imageFiles : videoFiles
   const index = tab === 'images' ? imageIndex : videoIndex
   const setIndex = tab === 'images' ? setImageIndex : setVideoIndex
   const current = files[index]
 
-  // Filtered view (for progress display and filter-aware navigation)
   const filteredFiles = useMemo(() => {
     if (!ratingFilter) return files
     return files.filter(f => (ratingsMap[f.path] || 0) >= ratingFilter)
   }, [files, ratingsMap, ratingFilter])
   const filteredIndex = filteredFiles.findIndex(f => f.path === current?.path)
 
-  const releaseVideo = async () => {
+  // ── Toast ─────────────────────────────────────────────────
+  const showToast = useCallback((msg) => {
+    setToast(msg)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 2000)
+  }, [])
+
+  // ── Hooks ─────────────────────────────────────────────────
+  const { logEntries, setLogEntries, showConsole, setShowConsole, addLog, logEndRef } = useActivityLog()
+  const { zoom, pan, setPan, dragActive, isDragging, changeZoom, resetZoom, handleWheel, handleMouseDown, handleMouseMove, handleMouseUp, minimapRect } = useZoomPan(viewerMediaRef)
+  const { goNext, goPrev, advance } = useMediaNavigation({ index, files, setIndex, ratingFilter, ratingsMap, showToast, setSlideshow })
+
+  // ── Refactor 3: releaseVideo as useCallback ───────────────
+  const releaseVideo = useCallback(async () => {
     if (tab === 'videos' && videoPlayerRef.current) {
       videoPlayerRef.current.release()
       await new Promise(r => setTimeout(r, 150))
     }
-  }
-
-  // ── Logging ──────────────────────────────────────────────
-  const addLog = useCallback((message, type = 'info') => {
-    setLogEntries(prev => [...prev.slice(-199), { id: ++logIdCounter, time: nowStr(), message, type }])
-  }, [])
-
-  // Auto-scroll console to bottom
-  useEffect(() => {
-    if (showConsole) logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [logEntries, showConsole])
+  }, [tab])
 
   // ── Load metadata when file changes ──────────────────────
   useEffect(() => {
@@ -104,10 +75,14 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     setSplitTimestamps([])
   }, [current?.path])
 
-  // Bulk-load all ratings on mount so filter can work immediately
+  // Bulk-load all ratings on mount so filter can work immediately.
+  // initialFilesRef captures the value at mount; the dep array is intentionally empty.
   useEffect(() => {
-    window.api.getAllRatings(initialFiles.map(f => f.path)).then(setRatingsMap)
+    window.api.getAllRatings(initialFilesRef.current.map(f => f.path)).then(setRatingsMap)
   }, [])
+
+  // Clean up toast timer on unmount
+  useEffect(() => () => clearTimeout(toastTimer.current), [])
 
   // Reset pan (not zoom) when file changes
   useEffect(() => {
@@ -122,53 +97,23 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     setSplitTimestamps([])
     setShowNotes(false)
     setSlideshow(false)
-    setZoom(1)
-    setPan({ x: 0, y: 0 })
   }, [tab])
 
-  // ── Toast ─────────────────────────────────────────────────
-  const showToast = useCallback((msg) => {
-    setToast(msg)
-    clearTimeout(toastTimer.current)
-    toastTimer.current = setTimeout(() => setToast(''), 2000)
-  }, [])
-
-  // ── Navigation ────────────────────────────────────────────
-  const advance = useCallback((newFiles, fromIndex) => {
-    if (ratingFilter) {
-      let next = fromIndex
-      while (next < newFiles.length && (ratingsMap[newFiles[next]?.path] || 0) < ratingFilter) next++
-      if (next >= newFiles.length) {
-        next = fromIndex - 1
-        while (next >= 0 && (ratingsMap[newFiles[next]?.path] || 0) < ratingFilter) next--
+  // ── Minimap canvas ────────────────────────────────────────
+  useEffect(() => {
+    if (tab !== 'videos' || zoom <= 1) return
+    let rafId
+    const draw = () => {
+      const canvas = minimapCanvasRef.current
+      const video = videoPlayerRef.current?.getVideoElement()
+      if (canvas && video && video.videoWidth) {
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
       }
-      setIndex(Math.max(0, Math.min(Math.max(next, 0), newFiles.length - 1)))
-    } else {
-      setIndex(Math.max(0, Math.min(fromIndex, newFiles.length - 1)))
+      rafId = requestAnimationFrame(draw)
     }
-  }, [setIndex, ratingFilter, ratingsMap])
-
-  const goNext = useCallback(() => {
-    if (ratingFilter) {
-      let next = index + 1
-      while (next < files.length && (ratingsMap[files[next]?.path] || 0) < ratingFilter) next++
-      if (next < files.length) setIndex(next)
-      else { setSlideshow(false); showToast('End of filtered files') }
-    } else {
-      if (index < files.length - 1) setIndex(i => i + 1)
-      else { setSlideshow(false); showToast('End of files') }
-    }
-  }, [index, files, setIndex, showToast, ratingFilter, ratingsMap])
-
-  const goPrev = useCallback(() => {
-    if (ratingFilter) {
-      let prev = index - 1
-      while (prev >= 0 && (ratingsMap[files[prev]?.path] || 0) < ratingFilter) prev--
-      if (prev >= 0) setIndex(prev)
-    } else {
-      if (index > 0) setIndex(i => i - 1)
-    }
-  }, [index, files, setIndex, ratingFilter, ratingsMap])
+    rafId = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(rafId)
+  }, [tab, zoom, current?.path])
 
   // ── File operations ───────────────────────────────────────
   const moveFile = useCallback(async (hotkeyIndex) => {
@@ -188,7 +133,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       showToast(`Error: ${e.message}`)
       addLog(`Error moving ${current.name}: ${e.message}`, 'delete')
     }
-  }, [current, files, hotkeys, index, tab, advance, showToast, addLog])
+  }, [current, files, hotkeys, index, tab, releaseVideo, advance, showToast, addLog])
 
   const deleteFile = useCallback(async () => {
     if (!current) return
@@ -205,7 +150,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       showToast(`Error: ${e.message}`)
       addLog(`Error deleting ${current.name}: ${e.message}`, 'delete')
     }
-  }, [current, files, index, tab, advance, showToast, addLog])
+  }, [current, files, index, tab, releaseVideo, advance, showToast, addLog])
 
   const saveNotes = useCallback(async () => {
     if (!current) return
@@ -242,53 +187,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
   }, [current, videoFiles, index, splitTimestamps, showToast, addLog])
 
-  // ── Zoom ──────────────────────────────────────────────────
-  const changeZoom = useCallback((delta) => {
-    setZoom(prev => {
-      const next = Math.round(Math.max(1, Math.min(5, prev + delta)) * 100) / 100
-      if (next === 1) setPan({ x: 0, y: 0 })
-      return next
-    })
-  }, [])
-
-  const resetZoom = useCallback(() => { setZoom(1); setPan({ x: 0, y: 0 }) }, [])
-
-  const handleWheel = useCallback((e) => {
-    e.preventDefault()
-    changeZoom(e.deltaY < 0 ? 0.25 : -0.25)
-  }, [changeZoom])
-
-  const handleMouseDown = useCallback((e) => {
-    if (zoom <= 1) return
-    e.preventDefault()
-    isDragging.current = true
-    setDragActive(true)
-    dragStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y }
-  }, [zoom, pan])
-
-  const handleMouseMove = useCallback((e) => {
-    if (!isDragging.current) return
-    setPan({ x: dragStart.current.panX + e.clientX - dragStart.current.x, y: dragStart.current.panY + e.clientY - dragStart.current.y })
-  }, [])
-
-  const handleMouseUp = useCallback(() => { isDragging.current = false; setDragActive(false) }, [])
-
-  // ── Minimap canvas ────────────────────────────────────────
-  useEffect(() => {
-    if (tab !== 'videos' || zoom <= 1) return
-    let rafId
-    const draw = () => {
-      const canvas = minimapCanvasRef.current
-      const video = videoPlayerRef.current?.getVideoElement()
-      if (canvas && video && video.videoWidth) {
-        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
-      }
-      rafId = requestAnimationFrame(draw)
-    }
-    rafId = requestAnimationFrame(draw)
-    return () => cancelAnimationFrame(rafId)
-  }, [tab, zoom, current?.path])
-
   // ── Slideshow ─────────────────────────────────────────────
   const handleVideoEnded = useCallback(() => {
     if (slideshow) goNext()
@@ -304,7 +202,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         return
       }
 
-      // Alt+1-5: set rating
       if (e.altKey && e.key >= '0' && e.key <= '5') {
         e.preventDefault()
         const newRating = parseInt(e.key)
@@ -398,20 +295,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveNotes, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current])
+  }, [goNext, goPrev, deleteFile, moveFile, saveNotes, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
-
-  const minimapRect = (() => {
-    const vW = viewerMediaRef.current?.offsetWidth || 800
-    const vH = viewerMediaRef.current?.offsetHeight || 600
-    const rW = 1 / zoom
-    const rH = 1 / zoom
-    const rL = Math.max(0, Math.min(1 - rW, 0.5 - 0.5 / zoom - pan.x / (zoom * vW)))
-    const rT = Math.max(0, Math.min(1 - rH, 0.5 - 0.5 / zoom - pan.y / (zoom * vH)))
-    return { left: rL, top: rT, width: rW, height: rH }
-  })()
 
   const renderEmpty = () => (
     <div className="viewer-empty">

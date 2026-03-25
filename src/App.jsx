@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Setup from './components/Setup'
 import MediaViewer from './components/MediaViewer'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const EMPTY_HOTKEYS = Array(9).fill(null).map((_, i) =>
   i === 0 ? { folder: 'C:\\', label: 'C:' } : { folder: null, label: '' }
@@ -29,11 +30,13 @@ export default function App() {
         <Setup hotkeys={hotkeys} onStart={handleStart} />
       )}
       {view === 'organize' && (
-        <MediaViewer
-          files={files}
-          hotkeys={hotkeys}
-          onBackToSetup={() => setView('setup')}
-        />
+        <ErrorBoundary>
+          <MediaViewer
+            files={files}
+            hotkeys={hotkeys}
+            onBackToSetup={() => setView('setup')}
+          />
+        </ErrorBoundary>
       )}
     </div>
   )

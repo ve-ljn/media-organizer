@@ -1,19 +1,6 @@
 import { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 'react'
+import { toFileUrl, formatTime, formatTimestamp } from '../utils'
 import './VideoPlayer.css'
-
-function formatTime(seconds) {
-  if (!seconds || isNaN(seconds)) return '0:00'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function formatTimeShort(seconds) {
-  if (isNaN(seconds)) return '0:00.0'
-  const m = Math.floor(seconds / 60)
-  const s = (seconds % 60).toFixed(1)
-  return `${m}:${String(s).padStart(4, '0')}`
-}
 
 const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps, onAddSplit, onRemoveSplit, onVideoEnded, autoPlay }, ref) {
   const videoRef = useRef(null)
@@ -23,7 +10,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps,
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
 
-  const src = 'file:///' + filePath.replace(/\\/g, '/')
+  const src = toFileUrl(filePath)
 
   useImperativeHandle(ref, () => ({
     release: () => {
@@ -171,7 +158,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps,
       {/* Loop badge */}
       {loopRange && (
         <div className="vp-loop-badge">
-          🔁 {formatTimeShort(loopRange.start)} – {formatTimeShort(loopRange.end)}
+          🔁 {formatTimestamp(loopRange.start)} – {formatTimestamp(loopRange.end)}
           <span className="vp-loop-hint">R to cancel</span>
         </div>
       )}

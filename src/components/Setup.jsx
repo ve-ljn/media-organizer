@@ -40,12 +40,16 @@ export default function Setup({ hotkeys: initialHotkeys, onStart }) {
     setHotkeys(hotkeys.map((hk, i) => (i === index ? { folder: null, label: '' } : hk)))
   }
 
-  const handleStart = () => {
+  const handleStart = async () => {
     if (!sourceFolder) return setError('Select a source folder first.')
     if (!hotkeys.some(h => h.folder)) return setError('Configure at least one hotkey folder.')
     if (fileCount === 0) return setError('The selected folder contains no supported media files.')
     setError(null)
-    onStart(sourceFolder, hotkeys)
+    try {
+      await onStart(sourceFolder, hotkeys)
+    } catch (e) {
+      setError(`Failed to start: ${e.message}`)
+    }
   }
 
   const configuredCount = hotkeys.filter(h => h.folder).length

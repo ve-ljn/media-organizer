@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { execSync } = require('child_process')
+const { execFile } = require('child_process')
 const Store = require('electron-store')
 const ffmpeg = require('fluent-ffmpeg')
 const ffmpegPath = require('ffmpeg-static')
@@ -28,7 +28,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false, // allows loading local file:// URLs for media
+      sandbox: true,        // restricts renderer to minimal privileges
+      webSecurity: false,   // required for file:// media URLs; custom protocols don't work reliably on Windows
     },
     title: 'Media Organizer',
   })
@@ -45,6 +46,18 @@ app.whenReady().then(createWindow)
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+// ── Sidecar helpers ───────────────────────────────────────
+function readSidecar(filePath) {
+  const sidecarPath = filePath + '.meta.json'
+  if (!fs.existsSync(sidecarPath)) return {}
+  try { return JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) } catch { return {} }
+}
+
+function writeSidecar(filePath, patch) {
+  const sidecarPath = filePath + '.meta.json'
+  fs.writeFileSync(sidecarPath, JSON.stringify({ ...readSidecar(filePath), ...patch }, null, 2))
+}
 
 // ── IPC Handlers ──────────────────────────────────────────
 
@@ -102,11 +115,17 @@ async function trashFile(filePath) {
   try {
     await shell.trashItem(filePath)
   } catch {
-    const escaped = filePath.replace(/'/g, "''")
-    execSync(
-      `powershell -NoProfile -NonInteractive -Command "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('${escaped}', 'OnlyErrorDialogs', 'SendToRecycleBin')"`,
-      { windowsHide: true }
-    )
+    // Fallback: pass path via env var to avoid any shell injection risk,
+    // and use execFile (async) so the main process thread is not blocked.
+    await new Promise((resolve, reject) => {
+      execFile(
+        'powershell',
+        ['-NoProfile', '-NonInteractive', '-Command',
+         'Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($env:TRASH_PATH, \'OnlyErrorDialogs\', \'SendToRecycleBin\')'],
+        { windowsHide: true, env: { ...process.env, TRASH_PATH: filePath } },
+        (err) => err ? reject(err) : resolve()
+      )
+    })
   }
 }
 
@@ -121,23 +140,12 @@ ipcMain.handle('media:delete', async (_event, filePath) => {
 
 // Read notes sidecar for a file
 ipcMain.handle('notes:get', async (_event, filePath) => {
-  const sidecarPath = filePath + '.meta.json'
-  if (!fs.existsSync(sidecarPath)) return { notes: '' }
-  try {
-    return JSON.parse(fs.readFileSync(sidecarPath, 'utf8'))
-  } catch {
-    return { notes: '' }
-  }
+  return { notes: '', ...readSidecar(filePath) }
 })
 
 // Write notes sidecar for a file
 ipcMain.handle('notes:save', async (_event, { filePath, notes }) => {
-  const sidecarPath = filePath + '.meta.json'
-  let existing = {}
-  if (fs.existsSync(sidecarPath)) {
-    try { existing = JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) } catch {}
-  }
-  fs.writeFileSync(sidecarPath, JSON.stringify({ ...existing, notes }, null, 2))
+  writeSidecar(filePath, { notes })
   return true
 })
 
@@ -187,10 +195,9 @@ ipcMain.handle('media:upscale', async (_event, { filePath }) => {
   const dir = path.dirname(filePath)
   const outPath = path.join(dir, `${base}_upscaled${ext}`)
 
-  const meta = await sharp(filePath).metadata()
-  await sharp(filePath)
-    .resize(meta.width * 2, meta.height * 2, { kernel: sharp.kernel.lanczos3 })
-    .toFile(outPath)
+  const image = sharp(filePath)
+  const { width, height } = await image.metadata()
+  await image.resize(width * 2, height * 2, { kernel: sharp.kernel.lanczos3 }).toFile(outPath)
 
   return { outPath, name: path.basename(outPath) }
 })
@@ -210,12 +217,7 @@ ipcMain.handle('media:saveFrame', async (_event, { filePath, dataUrl }) => {
 
 // Set rating in sidecar JSON
 ipcMain.handle('meta:setRating', async (_event, { filePath, rating }) => {
-  const sidecarPath = filePath + '.meta.json'
-  let existing = {}
-  if (fs.existsSync(sidecarPath)) {
-    try { existing = JSON.parse(fs.readFileSync(sidecarPath, 'utf8')) } catch {}
-  }
-  fs.writeFileSync(sidecarPath, JSON.stringify({ ...existing, rating }, null, 2))
+  writeSidecar(filePath, { rating })
   return true
 })
 
@@ -223,17 +225,7 @@ ipcMain.handle('meta:setRating', async (_event, { filePath, rating }) => {
 ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
   const result = {}
   for (const filePath of filePaths) {
-    const sidecarPath = filePath + '.meta.json'
-    if (fs.existsSync(sidecarPath)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'))
-        result[filePath] = data.rating || 0
-      } catch {
-        result[filePath] = 0
-      }
-    } else {
-      result[filePath] = 0
-    }
+    result[filePath] = readSidecar(filePath).rating || 0
   }
   return result
 })
