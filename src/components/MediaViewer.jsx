@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import VideoPlayer from './VideoPlayer'
+import SplitModal from './SplitModal'
 import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
 import useZoomPan from '../hooks/useZoomPan'
 import useMediaNavigation from '../hooks/useMediaNavigation'
-import { toFileUrl, formatTimestamp } from '../utils'
+import { toFileUrl } from '../utils'
 import './MediaViewer.css'
 
 export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetup }) {
@@ -13,7 +14,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const [imageIndex, setImageIndex] = useState(0)
   const [videoIndex, setVideoIndex] = useState(0)
 
-  const [splitTimestamps, setSplitTimestamps] = useState([])
+  const [pendingSplitTime, setPendingSplitTime] = useState(null)
   const [isSplitting, setIsSplitting] = useState(false)
   const [toast, setToast] = useState('')
 
@@ -24,6 +25,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   const initialFilesRef = useRef(initialFiles)
   const toastTimer = useRef(null)
+  const deleteConfirmRef = useRef(false)
+  const deleteConfirmTimer = useRef(null)
   const videoPlayerRef = useRef(null)
   const viewerMediaRef = useRef(null)
   const minimapCanvasRef = useRef(null)
@@ -63,7 +66,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   // ── Reset per-file state when file changes ────────────────
   useEffect(() => {
-    setSplitTimestamps([])
+    setPendingSplitTime(null)
+    // Disarm any pending delete confirmation when navigating away
+    deleteConfirmRef.current = false
+    clearTimeout(deleteConfirmTimer.current)
   }, [current?.path])
 
   // Bulk-load all ratings on mount so filter can work immediately.
@@ -72,8 +78,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     window.api.getAllRatings(initialFilesRef.current.map(f => f.path)).then(setRatingsMap)
   }, [])
 
-  // Clean up toast timer on unmount
-  useEffect(() => () => clearTimeout(toastTimer.current), [])
+  // Clean up timers on unmount
+  useEffect(() => () => {
+    clearTimeout(toastTimer.current)
+    clearTimeout(deleteConfirmTimer.current)
+  }, [])
 
   // Reset pan (not zoom) when file changes
   useEffect(() => {
@@ -81,7 +90,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   }, [current?.path])
 
   useEffect(() => {
-    setSplitTimestamps([])
+    setPendingSplitTime(null)
     setSlideshow(false)
   }, [tab])
 
@@ -151,24 +160,37 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
   }, [addLog, showToast])
 
-  const executeSplits = useCallback(async () => {
-    if (!current || splitTimestamps.length === 0) return
+  const executeSplits = useCallback(async (deleteOption) => {
+    if (!current || pendingSplitTime === null) return
+    setPendingSplitTime(null)
+    if (deleteOption === 'cancel') return
     setIsSplitting(true)
     try {
-      const newPaths = await window.api.splitVideo({ filePath: current.path, timestamps: splitTimestamps })
-      const newParts = newPaths.map(p => ({ path: p, name: p.split(/[\\/]/).pop(), type: 'video', ext: current.ext }))
+      const newPaths = await window.api.splitVideo({ filePath: current.path, timestamps: [pendingSplitTime] })
+      let keepPaths = newPaths
+
+      if (deleteOption === 'first') {
+        await window.api.deleteFile(newPaths[0])
+        keepPaths = newPaths.slice(1)
+        addLog(`Deleted first part  →  ${newPaths[0].split(/[\\/]/).pop()}`, 'delete')
+      } else if (deleteOption === 'last') {
+        await window.api.deleteFile(newPaths[newPaths.length - 1])
+        keepPaths = newPaths.slice(0, -1)
+        addLog(`Deleted last part  →  ${newPaths[newPaths.length - 1].split(/[\\/]/).pop()}`, 'delete')
+      }
+
+      const newParts = keepPaths.map(p => ({ path: p, name: p.split(/[\\/]/).pop(), type: 'video', ext: current.ext }))
       const newFiles = [...videoFiles.slice(0, index), ...newParts, ...videoFiles.slice(index + 1)]
       setVideoFiles(newFiles)
-      setSplitTimestamps([])
-      showToast(`✂ Split into ${newParts.length} parts`)
-      addLog(`Split  ${current.name}  →  ${newParts.length} parts`, 'split')
+      showToast(`✂ Split into ${newParts.length} part${newParts.length !== 1 ? 's' : ''}`)
+      addLog(`Split  ${current.name}  →  ${newParts.length} part${newParts.length !== 1 ? 's' : ''}`, 'split')
     } catch (e) {
       showToast(`Split failed: ${e.message}`)
       addLog(`Split failed: ${e.message}`, 'delete')
     } finally {
       setIsSplitting(false)
     }
-  }, [current, videoFiles, index, splitTimestamps, showToast, addLog])
+  }, [current, videoFiles, index, pendingSplitTime, showToast, addLog])
 
   // ── Slideshow ─────────────────────────────────────────────
   const handleVideoEnded = useCallback(() => {
@@ -218,7 +240,19 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           else videoPlayerRef.current?.togglePlay()
           break
         case 'd': case 'D': case 'Delete':
-          deleteFile()
+          if (deleteConfirmRef.current) {
+            // Second press — confirm and delete
+            deleteConfirmRef.current = false
+            clearTimeout(deleteConfirmTimer.current)
+            deleteFile()
+          } else {
+            // First press — arm and warn
+            deleteConfirmRef.current = true
+            showToast('🗑 Press D again to delete')
+            deleteConfirmTimer.current = setTimeout(() => {
+              deleteConfirmRef.current = false
+            }, 2000)
+          }
           break
         case 'l': case 'L':
           if (tab === 'videos') {
@@ -256,7 +290,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           break
         case 'Escape':
           if (zoom > 1) { resetZoom(); break }
-          setSplitTimestamps([])
           break
         default:
           if (!e.altKey && e.key >= '1' && e.key <= '9') moveFile(parseInt(e.key) - 1)
@@ -394,9 +427,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
                   ref={videoPlayerRef}
                   key={current.path}
                   filePath={current.path}
-                  splitTimestamps={splitTimestamps}
-                  onAddSplit={ts => setSplitTimestamps(prev => [...prev, ts].sort((a, b) => a - b))}
-                  onRemoveSplit={ts => setSplitTimestamps(prev => prev.filter(t => Math.abs(t - ts) > 0.1))}
+                  onSplitRequest={t => setPendingSplitTime(t)}
                   onVideoEnded={handleVideoEnded}
                   autoPlay={slideshow}
                 />
@@ -440,22 +471,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         </div>
       )}
 
-      {/* Split bar */}
-      {tab === 'videos' && splitTimestamps.length > 0 && (
+      {/* Splitting spinner */}
+      {isSplitting && (
         <div className="split-bar">
-          <div className="split-bar-label">✂ {splitTimestamps.length} split point{splitTimestamps.length !== 1 ? 's' : ''}</div>
-          <div className="split-tags">
-            {splitTimestamps.map(ts => (
-              <div key={ts} className="split-tag">
-                {formatTimestamp(ts)}
-                <button className="split-tag-x" onClick={() => setSplitTimestamps(prev => prev.filter(t => t !== ts))}>✕</button>
-              </div>
-            ))}
-          </div>
-          <button className="btn-execute-split" onClick={executeSplits} disabled={isSplitting}>
-            {isSplitting ? 'Splitting…' : 'Execute Splits'}
-          </button>
-          <button className="btn-clear-splits" onClick={() => setSplitTimestamps([])}>Clear</button>
+          <div className="split-bar-label">✂ Splitting…</div>
         </div>
       )}
 
@@ -472,11 +491,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           </div>
           <div className="action-hints">
             <span className="action-hint"><kbd>←</kbd><kbd>→</kbd> Navigate</span>
-            <span className="action-hint"><kbd>D</kbd> Delete</span>
+            <span className="action-hint"><kbd>D</kbd><kbd>D</kbd> Delete</span>
             <span className="action-hint"><kbd>Alt+1–5</kbd> Rate</span>
             <span className="action-hint"><kbd>scroll</kbd> Zoom</span>
             {tab === 'videos' && <span className="action-hint"><kbd>F</kbd> Snapshot</span>}
-            {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split</span>}
+            {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split (1/2/Esc)</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>L</kbd> Slideshow</span>}
             <span className="action-hint"><kbd>`</kbd> Log</span>
@@ -485,6 +504,14 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       )}
 
       {toast && <div className="toast">{toast}</div>}
+
+      {pendingSplitTime !== null && (
+        <SplitModal
+          timestamp={pendingSplitTime}
+          onConfirm={executeSplits}
+          onCancel={() => setPendingSplitTime(null)}
+        />
+      )}
     </div>
   )
 }

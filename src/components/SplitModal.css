@@ -1,0 +1,120 @@
+.split-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(3px);
+}
+
+.split-modal {
+  background: #1e1e2e;
+  border: 1px solid #3a3a5c;
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.split-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #e0e0f0;
+}
+
+.split-modal-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #8888aa;
+}
+
+.split-modal-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.split-modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.split-modal-btn kbd {
+  min-width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.split-modal-btn > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.split-modal-btn-label {
+  font-size: 14px;
+  font-weight: 600;
+  display: block;
+}
+
+.split-modal-btn-desc {
+  font-size: 11px;
+  opacity: 0.6;
+  display: block;
+}
+
+.split-modal-btn--delete {
+  background: #2a1a1a;
+  border-color: #5c2a2a;
+  color: #e0c0c0;
+}
+
+.split-modal-btn--delete kbd {
+  background: #5c2a2a;
+  color: #ffaaaa;
+  border: 1px solid #8a3a3a;
+}
+
+.split-modal-btn--delete:hover {
+  background: #3a1e1e;
+  border-color: #e05555;
+}
+
+.split-modal-btn--keep {
+  background: #1a1a2a;
+  border-color: #2a2a5c;
+  color: #c0c0e0;
+}
+
+.split-modal-btn--keep kbd {
+  background: #2a2a5c;
+  color: #aaaaff;
+  border: 1px solid #4a4a8a;
+  font-size: 11px;
+}
+
+.split-modal-btn--keep:hover {
+  background: #1e1e3a;
+  border-color: #5555cc;
+}

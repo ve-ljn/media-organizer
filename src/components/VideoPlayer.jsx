@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, useImperativeHandle, forwardRef } from 're
 import { toFileUrl, formatTime, formatTimestamp } from '../utils'
 import './VideoPlayer.css'
 
-const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps, onAddSplit, onRemoveSplit, onVideoEnded, autoPlay }, ref) {
+const VideoPlayer = forwardRef(function VideoPlayer({ filePath, onSplitRequest, onVideoEnded, autoPlay }, ref) {
   const videoRef = useRef(null)
   const loopRef = useRef(null)        // { start, end } or null
   const [loopRange, setLoopRange] = useState(null)
@@ -112,21 +112,18 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps,
     }
   }, [filePath, autoPlay])
 
-  // S key: add/remove split at current time
+  // S key: request a split at current time
   useEffect(() => {
     const onKey = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
       if (e.key !== 's' && e.key !== 'S') return
       const v = videoRef.current
       if (!v) return
-      const t = v.currentTime
-      const nearby = splitTimestamps.find(ts => Math.abs(ts - t) < 0.5)
-      if (nearby !== undefined) onRemoveSplit(nearby)
-      else onAddSplit(t)
+      onSplitRequest?.(v.currentTime)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [splitTimestamps, onAddSplit, onRemoveSplit])
+  }, [onSplitRequest])
 
   const togglePlay = () => {
     const v = videoRef.current
@@ -181,17 +178,6 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps,
               />
             )}
 
-            {splitTimestamps.map(ts => (
-              <div
-                key={ts}
-                className="vp-split-mark"
-                style={{ left: `${(ts / duration) * 100}%` }}
-                title={`Split at ${formatTime(ts)} — click to remove`}
-                onClick={e => { e.stopPropagation(); onRemoveSplit(ts) }}
-              >
-                <div className="vp-split-label">{formatTime(ts)}</div>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -201,7 +187,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, splitTimestamps,
       </div>
 
       <div className="vp-hint">
-        Press <kbd>S</kbd> to mark a split &nbsp;·&nbsp; <kbd>R</kbd> to loop ±2s
+        Press <kbd>S</kbd> to split &nbsp;·&nbsp; <kbd>R</kbd> to loop ±2s
       </div>
     </div>
   )
