@@ -10,7 +10,7 @@ ffmpeg.setFfmpegPath(ffmpegPath)
 ffmpeg.setFfprobePath(ffprobePath)
 
 const store = new Store()
-const isDev = !app.isPackaged && !fs.existsSync(path.join(__dirname, '../dist/index.html'))
+const isDev = process.env.ELECTRON_IS_DEV === '1'
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.avif']
 const VIDEO_EXTENSIONS = ['.mp4', '.mov', '.webm', '.m4v']

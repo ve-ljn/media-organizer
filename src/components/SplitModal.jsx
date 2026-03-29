@@ -39,7 +39,7 @@ export default function SplitModal({ timestamp, onConfirm, onCancel }) {
           <button className="split-modal-btn split-modal-btn--keep" onClick={onCancel}>
             <kbd>Esc</kbd>
             <span>
-              <span className="split-modal-btn-label">Keep both parts</span>
+              <span className="split-modal-btn-label">Split, keep both</span>
               <span className="split-modal-btn-desc">Don't delete anything</span>
             </span>
           </button>

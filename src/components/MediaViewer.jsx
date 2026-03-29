@@ -132,6 +132,21 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
   const deleteFile = useCallback(async () => {
     if (!current) return
+
+    // First press: arm confirmation
+    if (!deleteConfirmRef.current) {
+      deleteConfirmRef.current = true
+      showToast('🗑 Press D again to delete')
+      clearTimeout(deleteConfirmTimer.current)
+      deleteConfirmTimer.current = setTimeout(() => {
+        deleteConfirmRef.current = false
+      }, 2000)
+      return
+    }
+
+    // Second press: confirmed — delete
+    deleteConfirmRef.current = false
+    clearTimeout(deleteConfirmTimer.current)
     try {
       await releaseVideo()
       await window.api.deleteFile(current.path)
@@ -205,6 +220,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         if (e.key === 'Escape') e.target.blur()
         return
       }
+      if (pendingSplitTime !== null) return
 
       if (e.altKey && e.key >= '0' && e.key <= '5') {
         e.preventDefault()
@@ -240,19 +256,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           else videoPlayerRef.current?.togglePlay()
           break
         case 'd': case 'D': case 'Delete':
-          if (deleteConfirmRef.current) {
-            // Second press — confirm and delete
-            deleteConfirmRef.current = false
-            clearTimeout(deleteConfirmTimer.current)
-            deleteFile()
-          } else {
-            // First press — arm and warn
-            deleteConfirmRef.current = true
-            showToast('🗑 Press D again to delete')
-            deleteConfirmTimer.current = setTimeout(() => {
-              deleteConfirmRef.current = false
-            }, 2000)
-          }
+          deleteFile()
           break
         case 'l': case 'L':
           if (tab === 'videos') {
@@ -297,7 +301,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -509,7 +513,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         <SplitModal
           timestamp={pendingSplitTime}
           onConfirm={executeSplits}
-          onCancel={() => setPendingSplitTime(null)}
+          onCancel={() => executeSplits('none')}
         />
       )}
     </div>
