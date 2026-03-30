@@ -214,10 +214,14 @@ ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
   return result
 })
 
+// Get/set persisted source folder
+ipcMain.handle('config:getSourceFolder', () => store.get('sourceFolder', null))
+ipcMain.handle('config:setSourceFolder', (_event, folder) => { store.set('sourceFolder', folder); return true })
+
 // Get persisted hotkey config
 ipcMain.handle('config:getHotkeys', () => {
-  const fallback = Array(3).fill(null).map(() => ({ folder: null, label: '' }))
-  return store.get('hotkeys', fallback).slice(0, 3)
+  const fallback = Array(6).fill(null).map(() => ({ folder: null, label: '' }))
+  return store.get('hotkeys', fallback).slice(0, 6)
 })
 
 // Save hotkey config

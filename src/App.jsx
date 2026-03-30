@@ -3,7 +3,7 @@ import Setup from './components/Setup'
 import MediaViewer from './components/MediaViewer'
 import ErrorBoundary from './components/ErrorBoundary'
 
-const EMPTY_HOTKEYS = Array(3).fill(null).map((_, i) =>
+const EMPTY_HOTKEYS = Array(6).fill(null).map((_, i) =>
   i === 0 ? { folder: 'C:\\', label: 'C:' } : { folder: null, label: '' }
 )
 
@@ -14,12 +14,16 @@ export default function App() {
   const [sourceFolder, setSourceFolder] = useState(null)
 
   useEffect(() => {
-    window.api.getHotkeys().then(setHotkeys)
+    Promise.all([window.api.getHotkeys(), window.api.getSourceFolder()]).then(([hk, folder]) => {
+      setHotkeys(hk)
+      setSourceFolder(folder)
+    })
   }, [])
 
   const handleStart = async (folder, updatedHotkeys) => {
     const mediaFiles = await window.api.getMediaFiles(folder)
     await window.api.setHotkeys(updatedHotkeys)
+    await window.api.setSourceFolder(folder)
     setHotkeys(updatedHotkeys)
     setSourceFolder(folder)
     setFiles(mediaFiles)

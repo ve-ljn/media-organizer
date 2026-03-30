@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('api', {
   splitVideo: (args) => ipcRenderer.invoke('video:split', args),
   getHotkeys: () => ipcRenderer.invoke('config:getHotkeys'),
   setHotkeys: (hotkeys) => ipcRenderer.invoke('config:setHotkeys', hotkeys),
+  getSourceFolder: () => ipcRenderer.invoke('config:getSourceFolder'),
+  setSourceFolder: (folder) => ipcRenderer.invoke('config:setSourceFolder', folder),
   saveFrame: (filePath, dataUrl) => ipcRenderer.invoke('media:saveFrame', { filePath, dataUrl }),
   setRating: (filePath, rating) => ipcRenderer.invoke('meta:setRating', { filePath, rating }),
   getAllRatings: (filePaths) => ipcRenderer.invoke('meta:getAllRatings', filePaths),

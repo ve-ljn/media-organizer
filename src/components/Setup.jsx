@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './Setup.css'
 
-const KEY_LABELS = ['1', '2', '3']
+const KEY_LABELS = ['1', '2', '3', '4', '5', '6']
 
 export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSourceFolder, onStart }) {
   const [hotkeys, setHotkeys] = useState(initialHotkeys)
@@ -12,12 +12,13 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
   const [fileCount, setFileCount] = useState(null)
   const [error, setError] = useState(null)
 
-  // Restore file count when returning to setup with a previously selected folder
+  // Sync when the saved folder finishes loading from the store (async on first mount)
   useEffect(() => {
     if (initialSourceFolder) {
+      setSourceFolder(initialSourceFolder)
       window.api.getMediaFiles(initialSourceFolder).then(files => setFileCount(files.length))
     }
-  }, [])
+  }, [initialSourceFolder])
 
   const selectSourceFolder = async () => {
     const folder = await window.api.selectFolder()
@@ -33,7 +34,7 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
     const folderName = folder.split(/[\\/]/).pop()
     const updated = hotkeys.map((hk, i) =>
       i === index
-        ? { folder, label: hk.label || folderName }
+        ? { folder, label: folderName }
         : hk
     )
     setHotkeys(updated)

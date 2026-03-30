@@ -302,7 +302,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           if (zoom > 1) { resetZoom(); break }
           break
         default:
-          if (!e.altKey && e.key >= '1' && e.key <= '3') moveFile(parseInt(e.key) - 1)
+          if (!e.altKey && e.key >= '1' && e.key <= '6') moveFile(parseInt(e.key) - 1)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -458,6 +458,25 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           )}
         </div>
 
+        {/* Preview strip */}
+        {files.length > 1 && (
+          <div className="preview-strip">
+            {files.slice(index + 1, index + 11).map((f, i) => (
+              <div
+                key={f.path}
+                className="preview-item"
+                onClick={() => setIndex(index + 1 + i)}
+                title={f.name}
+              >
+                {f.type === 'image'
+                  ? <img src={toFileUrl(f.path)} className="preview-thumb" alt={f.name} draggable={false} />
+                  : <div className="preview-video-icon">🎬</div>
+                }
+                <div className="preview-name">{f.name}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Activity console */}
