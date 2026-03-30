@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react'
 import './Setup.css'
 
-const KEY_LABELS = ['1', '2', '3', '4', '5', '6', '7', '8', '9']
+const KEY_LABELS = ['1', '2', '3']
 
-export default function Setup({ hotkeys: initialHotkeys, onStart }) {
+export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSourceFolder, onStart }) {
   const [hotkeys, setHotkeys] = useState(initialHotkeys)
 
   // Sync when the store finishes loading in the parent
   useEffect(() => { setHotkeys(initialHotkeys) }, [initialHotkeys])
-  const [sourceFolder, setSourceFolder] = useState(null)
+  const [sourceFolder, setSourceFolder] = useState(initialSourceFolder)
   const [fileCount, setFileCount] = useState(null)
   const [error, setError] = useState(null)
+
+  // Restore file count when returning to setup with a previously selected folder
+  useEffect(() => {
+    if (initialSourceFolder) {
+      window.api.getMediaFiles(initialSourceFolder).then(files => setFileCount(files.length))
+    }
+  }, [])
 
   const selectSourceFolder = async () => {
     const folder = await window.api.selectFolder()

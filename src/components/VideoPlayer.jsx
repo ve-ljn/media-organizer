@@ -136,6 +136,7 @@ const VideoPlayer = forwardRef(function VideoPlayer({ filePath, onSplitRequest, 
     if (!v || !duration) return
     const rect = e.currentTarget.getBoundingClientRect()
     const ratio = (e.clientX - rect.left) / rect.width
+    v.pause()
     v.currentTime = Math.max(0, Math.min(duration, ratio * duration))
   }
 

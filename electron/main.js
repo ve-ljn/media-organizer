@@ -171,7 +171,7 @@ ipcMain.handle('video:split', async (_event, { filePath, timestamps }) => {
         ffmpeg(filePath)
           .setStartTime(start)
           .setDuration(end - start)
-          .outputOptions(['-c copy', '-avoid_negative_ts make_zero'])
+          .outputOptions(['-c:v libx264', '-crf 18', '-preset fast', '-c:a copy'])
           .output(outPath)
           .on('end', () => {
             results.push(outPath)
@@ -216,8 +216,8 @@ ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
 
 // Get persisted hotkey config
 ipcMain.handle('config:getHotkeys', () => {
-  const fallback = Array(9).fill(null).map(() => ({ folder: null, label: '' }))
-  return store.get('hotkeys', fallback)
+  const fallback = Array(3).fill(null).map(() => ({ folder: null, label: '' }))
+  return store.get('hotkeys', fallback).slice(0, 3)
 })
 
 // Save hotkey config

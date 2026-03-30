@@ -179,9 +179,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     if (!current || pendingSplitTime === null) return
     setPendingSplitTime(null)
     if (deleteOption === 'cancel') return
+    const originalPath = current.path
+    const originalExt = current.ext
+    const originalName = current.name
     setIsSplitting(true)
     try {
-      const newPaths = await window.api.splitVideo({ filePath: current.path, timestamps: [pendingSplitTime] })
+      await releaseVideo()
+      const newPaths = await window.api.splitVideo({ filePath: originalPath, timestamps: [pendingSplitTime] })
       let keepPaths = newPaths
 
       if (deleteOption === 'first') {
@@ -194,18 +198,20 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         addLog(`Deleted last part  →  ${newPaths[newPaths.length - 1].split(/[\\/]/).pop()}`, 'delete')
       }
 
-      const newParts = keepPaths.map(p => ({ path: p, name: p.split(/[\\/]/).pop(), type: 'video', ext: current.ext }))
+      await window.api.deleteFile(originalPath)
+
+      const newParts = keepPaths.map(p => ({ path: p, name: p.split(/[\\/]/).pop(), type: 'video', ext: originalExt }))
       const newFiles = [...videoFiles.slice(0, index), ...newParts, ...videoFiles.slice(index + 1)]
       setVideoFiles(newFiles)
       showToast(`✂ Split into ${newParts.length} part${newParts.length !== 1 ? 's' : ''}`)
-      addLog(`Split  ${current.name}  →  ${newParts.length} part${newParts.length !== 1 ? 's' : ''}`, 'split')
+      addLog(`Split  ${originalName}  →  ${newParts.length} part${newParts.length !== 1 ? 's' : ''}`, 'split')
     } catch (e) {
       showToast(`Split failed: ${e.message}`)
       addLog(`Split failed: ${e.message}`, 'delete')
     } finally {
       setIsSplitting(false)
     }
-  }, [current, videoFiles, index, pendingSplitTime, showToast, addLog])
+  }, [current, videoFiles, index, pendingSplitTime, releaseVideo, showToast, addLog])
 
   // ── Slideshow ─────────────────────────────────────────────
   const handleVideoEnded = useCallback(() => {
@@ -220,7 +226,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         if (e.key === 'Escape') e.target.blur()
         return
       }
-      if (pendingSplitTime !== null) return
+      if (pendingSplitTime !== null || isSplitting) return
 
       if (e.altKey && e.key >= '0' && e.key <= '5') {
         e.preventDefault()
@@ -296,12 +302,12 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           if (zoom > 1) { resetZoom(); break }
           break
         default:
-          if (!e.altKey && e.key >= '1' && e.key <= '9') moveFile(parseInt(e.key) - 1)
+          if (!e.altKey && e.key >= '1' && e.key <= '3') moveFile(parseInt(e.key) - 1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -499,7 +505,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
             <span className="action-hint"><kbd>Alt+1–5</kbd> Rate</span>
             <span className="action-hint"><kbd>scroll</kbd> Zoom</span>
             {tab === 'videos' && <span className="action-hint"><kbd>F</kbd> Snapshot</span>}
-            {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split (1/2/Esc)</span>}
+            {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>L</kbd> Slideshow</span>}
             <span className="action-hint"><kbd>`</kbd> Log</span>
