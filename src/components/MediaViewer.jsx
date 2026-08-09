@@ -11,6 +11,10 @@ import useMediaNavigation from '../hooks/useMediaNavigation'
 import { toFileUrl } from '../utils'
 import './MediaViewer.css'
 
+// How much context the preview strip shows either side of the current file
+const STRIP_BEFORE = 3
+const STRIP_AHEAD = 10
+
 const ROTATE_LABELS = { left: 'left', right: 'right', flip: '180°' }
 const ROTATE_TRANSFORMS = { left: 'rotate(-90deg)', right: 'rotate(90deg)', flip: 'rotate(180deg)' }
 
@@ -80,6 +84,35 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   }, [files, ratingsMap, ratingFilter])
   const filteredIndex = filteredFiles.findIndex(f => f.path === current?.path)
   const rating = ratingsMap[current?.path] || 0
+
+  // Preview strip contents.
+  //
+  // Built from filteredFiles, not files, so the strip walks exactly the
+  // sequence the arrow keys walk. Sourcing it from the raw list meant a rating
+  // filter could show entries the keyboard would never reach, and clicking one
+  // dropped you onto a file outside the filter.
+  //
+  // It wraps for the same reason: goNext/goPrev wrap with %, so on the last
+  // file the keyboard returns to the start while the old slice simply ran out.
+  const stripItems = useMemo(() => {
+    const total = filteredFiles.length
+    if (total === 0) return []
+
+    const pos = filteredIndex >= 0 ? filteredIndex : 0
+    const span = Math.min(total, STRIP_BEFORE + 1 + STRIP_AHEAD)
+
+    return Array.from({ length: span }, (_, k) => {
+      const at = (((pos - STRIP_BEFORE + k) % total) + total) % total
+      return { file: filteredFiles[at], isCurrent: at === filteredIndex }
+    })
+  }, [filteredFiles, filteredIndex])
+
+  // Strip entries are positions in filteredFiles; the index state indexes the
+  // raw list, so map back through the path.
+  const goToFile = useCallback((file) => {
+    const at = files.findIndex(f => f.path === file.path)
+    if (at >= 0) setIndex(at)
+  }, [files, setIndex])
 
   // ── Toast ─────────────────────────────────────────────────
   const showToast = useCallback((msg) => {
@@ -695,6 +728,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         if (e.key === 'Escape') e.target.blur()
         return
       }
+
+      // Let a focused strip thumbnail handle its own activation. Arrows still
+      // navigate globally; only the activation keys are ceded, otherwise Space
+      // would both click the thumbnail and trigger play/advance.
+      if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.preview-strip')) return
       // The rotate modal owns 1/2/3/Esc, and its preview owns Enter/Esc
       if (pendingSplitTime !== null || isSplitting || isCropping || pendingRotate || rotatePreview) return
 
@@ -875,7 +913,12 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
             </div>
 
             <div className="viewer-progress">
-              {ratingFilter ? `${Math.max(0, filteredIndex + 1)} / ${filteredFiles.length}` : `${index + 1} / ${files.length}`}
+              {ratingFilter
+                // filteredIndex is -1 when the current file falls outside the
+                // filter — e.g. its rating was just lowered. Showing "0" read
+                // like a broken counter; "–" says "not in this filter".
+                ? `${filteredIndex >= 0 ? filteredIndex + 1 : '–'} / ${filteredFiles.length}`
+                : `${index + 1} / ${files.length}`}
               {ratingFilter && <span className="filter-badge">{ratingFilter}★+</span>}
             </div>
             <div className="viewer-progbar">
@@ -983,19 +1026,30 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         {/* Preview strip */}
         {files.length > 1 && (
           <div className="preview-strip">
-            {files.slice(index + 1, index + 11).map((f, i) => (
-              <div
-                key={f.path}
-                className="preview-item"
-                onClick={() => setIndex(index + 1 + i)}
-                title={f.name}
+            {stripItems.map(({ file, isCurrent }) => (
+              // A button rather than a div: focusable, and Enter/Space activate
+              // it natively, so the strip is reachable without a mouse.
+              <button
+                type="button"
+                key={file.path}
+                className={`preview-item ${isCurrent ? 'preview-item--current' : ''}`}
+                onClick={() => goToFile(file)}
+                title={file.name}
+                aria-current={isCurrent ? 'true' : undefined}
               >
-                {f.type === 'image'
-                  ? <img src={toFileUrl(f.path)} className="preview-thumb" alt={f.name} draggable={false} />
+                {file.type === 'image'
+                  ? <img
+                      src={toFileUrl(file.path)}
+                      className="preview-thumb"
+                      alt={file.name}
+                      draggable={false}
+                      loading="lazy"
+                      decoding="async"
+                    />
                   : <div className="preview-video-icon">🎬</div>
                 }
-                <div className="preview-name">{f.name}</div>
-              </div>
+                <div className="preview-name">{file.name}</div>
+              </button>
             ))}
           </div>
         )}

@@ -50,7 +50,6 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
 
   const handleStart = async () => {
     if (!sourceFolder) return setError('Select a source folder first.')
-    if (!hotkeys.some(h => h.folder)) return setError('Configure at least one hotkey folder.')
     if (fileCount === 0) return setError('The selected folder contains no supported media files.')
     setError(null)
     try {
@@ -67,7 +66,7 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
       <div className="setup-body">
         <div className="setup-header">
           <h1>Media Organizer</h1>
-          <p>Choose a source folder and map your hotkeys before you start organizing.</p>
+          <p>Choose a source folder to get started. Hotkeys are optional — skip them if you only want to crop, rotate, or rate.</p>
         </div>
 
         {/* Source folder */}
@@ -90,7 +89,7 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
 
         {/* Hotkeys grid */}
         <div className="setup-section">
-          <div className="section-title">Hotkey Destinations — Keys 1 through 9</div>
+          <div className="section-title">Hotkey Destinations — Keys 1 through 6 (optional)</div>
           <div className="hotkeys-grid">
             {KEY_LABELS.map((key, i) => {
               const hk = hotkeys[i]

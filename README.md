@@ -8,9 +8,9 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 
 ## Features
 
-- **Hotkey sorting** — map up to 6 destination folders to keys 1–6. Press a key to move the current file and auto-advance
+- **Hotkey sorting** — map up to 6 destination folders to keys 1–6. Press a key to move the current file and auto-advance. Optional: leave them unset if you only want to crop, rotate, or rate
 - **Separate tabs** for images and videos with individual file counters
-- **Preview strip** — the next 10 files are shown as thumbnails in a sidebar to the right
+- **Preview strip** — a sidebar of thumbnails showing where you are, a few files back, and what's coming. Click or tab to any of them to jump. It follows the same order as the arrow keys, including the rating filter and wrap-around
 - **Star ratings** — rate files 1–5 stars (Alt+1–5) stored in JSON sidecar files
 - **Rating filter** — filter navigation to only 4★+ or 5★ files
 - **Video splitting** — press S at any point while watching to mark a cut; choose to keep the part before, the part after, or both halves (frame-accurate, re-encoded)

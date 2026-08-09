@@ -3,6 +3,9 @@
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  /* Containing block for the crop overlays, which previously resolved against
+     the viewport by accident because nothing up the tree was positioned */
+  position: relative;
 }
 
 /* Top bar */
@@ -435,10 +438,33 @@
   overflow: hidden;
   border: 1px solid transparent;
   flex-shrink: 0;
+  /* Reset the button defaults; this is a button for focus and Enter/Space */
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
 }
 
 .preview-item:hover {
   border-color: #444;
+}
+
+.preview-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The file you are on, so the strip shows position rather than only what's next */
+.preview-item--current {
+  border-color: var(--accent);
+}
+
+.preview-item--current .preview-name {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .preview-thumb {
