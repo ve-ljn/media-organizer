@@ -1,0 +1,291 @@
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  /* Sits over the <video>, so clicks land here instead of toggling playback */
+  cursor: default;
+}
+
+.crop-shade {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.66);
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid var(--green);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 18px rgba(74, 222, 128, 0.25);
+  cursor: move;
+  touch-action: none;
+}
+
+.crop-thirds {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-thirds i {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.crop-thirds i.v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.crop-thirds i.h {
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.crop-dims {
+  position: absolute;
+  top: -26px;
+  left: 0;
+  background: var(--green);
+  color: #08130c;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: var(--green);
+  border: 2px solid #0d1f14;
+  border-radius: 2px;
+  touch-action: none;
+}
+
+.crop-handle--nw { left: -7px;  top: -7px;    cursor: nwse-resize; }
+.crop-handle--ne { right: -7px; top: -7px;    cursor: nesw-resize; }
+.crop-handle--sw { left: -7px;  bottom: -7px; cursor: nesw-resize; }
+.crop-handle--se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.crop-handle--n  { left: 50%;   top: -7px;    margin-left: -6px; cursor: ns-resize; }
+.crop-handle--s  { left: 50%;   bottom: -7px; margin-left: -6px; cursor: ns-resize; }
+.crop-handle--w  { top: 50%;    left: -7px;   margin-top: -6px;  cursor: ew-resize; }
+.crop-handle--e  { top: 50%;    right: -7px;  margin-top: -6px;  cursor: ew-resize; }
+
+/* ── Toolbar shown while crop mode is active ─────────────── */
+.crop-panel {
+  position: absolute;
+  bottom: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  z-index: 20;
+  max-width: 94vw;
+}
+
+.crop-grip {
+  cursor: move;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 2px;
+  margin-right: -6px;
+  user-select: none;
+  touch-action: none;
+  flex-shrink: 0;
+}
+
+.crop-grip:hover {
+  color: var(--text);
+}
+
+.crop-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crop-group-label {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.crop-chip {
+  background: #2a2a2a;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.crop-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.crop-confirm {
+  background: var(--green-dim);
+  border: 1px solid var(--green);
+  color: var(--green);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.crop-still {
+  background: var(--accent-dim);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.crop-cancel {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.crop-keep {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.crop-readout {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-readout b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ── Preview shown before the crop is written ────────────── */
+.crop-preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.crop-preview {
+  background: var(--bg2, #1e1e1e);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.crop-preview-title {
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.crop-preview-title b {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.crop-preview-note {
+  margin-left: 8px;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+
+.crop-preview-frame {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.crop-preview-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Progress bar while ffmpeg re-encodes */
+.crop-bar {
+  position: absolute;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.82);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 50;
+}
+
+.crop-bar-label {
+  font-size: 14px;
+  color: var(--green);
+  font-weight: 600;
+}
+
+.crop-bar-track {
+  width: 320px;
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.crop-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+
+.crop-bar-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
