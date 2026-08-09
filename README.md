@@ -84,9 +84,11 @@ On a video, `Shift+Enter` saves the boxed region of the current frame as a PNG i
 
 ## Rotation
 
-`T` opens a chooser (`1` left, `2` right, `3` upside down), then a preview before anything is written. Video is re-encoded; images keep their source format. The rotated file replaces the original, which goes to the Recycle Bin.
+`T` opens a chooser (`1` left, `2` right, `3` upside down), then a preview before anything is written. Video is re-encoded; images keep their source format. **Keep original** is offered on the preview, same as for crop — left unticked, the rotated file replaces the original and the original goes to the Recycle Bin.
 
 Animated GIFs are refused rather than re-encoded, since that would destroy the animation.
+
+Crop, rotate, and audio removal all pin the file they were started on. If the player advances underneath an open box or dialog — slideshow reaching the end of a clip is the usual way — the action is cancelled rather than applied to whatever is on screen by then.
 
 ## Metadata
 

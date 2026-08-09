@@ -64,7 +64,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const cropPanelRef = useRef(null)
   const panelDragRef = useRef(null)
   const imgRef = useRef(null)
-  const cropSourceRef = useRef(null)   // path the crop box was drawn on
+  const actionSourceRef = useRef(null)   // path the in-flight action was started on
   const audioConfirmRef = useRef(false)
   const audioConfirmTimer = useRef(null)
 
@@ -276,6 +276,28 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     handleWheel(e)
   }, [cropMode, handleWheel])
 
+  // ── File-identity guard, shared by every replacing action ─
+  //
+  // A modal or a crop box can stay open while the player advances underneath
+  // it — slideshow reaching the end of a clip is the usual way. Each action
+  // records the file it was started on and refuses to run against any other,
+  // so a confirmation can never land on something the user was not looking at.
+  const beginFileAction = useCallback(() => {
+    videoPlayerRef.current?.pause()
+    actionSourceRef.current = current?.path ?? null
+  }, [current])
+
+  const isSameFileAsAction = useCallback(
+    () => !actionSourceRef.current || actionSourceRef.current === current?.path,
+    [current],
+  )
+
+  // Any interactive or in-flight operation. Auto-advance must stand down for
+  // all of these, not just crop.
+  const actionPending =
+    cropMode || !!cropPreview || pendingRotate || !!rotatePreview ||
+    isCropping || isSplitting || pendingSplitTime !== null
+
   // ── Crop ──────────────────────────────────────────────────
   // The toolbar floats over the frame, so it can cover the part of the video
   // the user wants to crop. Let it be dragged out of the way by its grip.
@@ -315,23 +337,18 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     // useZoomPan disables pointer events above 1x and translates the frame,
     // which would put the box out of register with the picture. Start clean.
     resetZoom()
-    // Pause: a playing clip can reach its end mid-crop and, with slideshow on,
-    // advance the file under the box.
-    videoPlayerRef.current?.pause()
-    // Remember exactly which file the box is being drawn on, so the crop can
-    // refuse to run if the current file changed in the meantime.
-    cropSourceRef.current = current.path
+    beginFileAction()
     setCropRect({ x: 0, y: 0, w: 1, h: 1 })
     setCropMode(true)
     showToast('✂ Crop mode — drag the box, Enter to apply')
-  }, [current, resetZoom, showToast])
+  }, [current, resetZoom, showToast, beginFileAction])
 
   // Nothing is written until the preview is confirmed. Build it from what is
   // already on screen so there is no ffmpeg round-trip just to look at it.
-  const requestCropPreview = useCallback(() => {
+  const requestCropPreview = useCallback(async () => {
     if (!current || !cropRect) return
 
-    if (cropSourceRef.current && cropSourceRef.current !== current.path) {
+    if (!isSameFileAsAction()) {
       showToast('⚠ File changed — crop cancelled, press C again')
       setCropMode(false)
       return
@@ -343,6 +360,15 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
 
     const isImage = tab === 'images'
+
+    // Catch this before the preview rather than after the user confirms one
+    if (isImage && current.ext?.toLowerCase() === '.gif' &&
+        await window.api.isAnimatedGif(current.path)) {
+      showToast('❌ Animated GIFs cannot be cropped')
+      setCropMode(false)
+      return
+    }
+
     const el = isImage ? imgRef.current : videoPlayerRef.current?.getVideoElement()
     const iw = el ? (el.naturalWidth || el.videoWidth || 0) : 0
     const ih = el ? (el.naturalHeight || el.videoHeight || 0) : 0
@@ -370,15 +396,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       }
       setCropPreview({ src: dataUrl, rect: null, outW, outH, note: 'current frame' })
     }
-  }, [current, cropRect, tab, showToast])
+  }, [current, cropRect, tab, showToast, isSameFileAsAction])
 
   const executeCrop = useCallback(async () => {
     if (!current || !cropRect) return
     setCropPreview(null)
 
-    // The file must still be the one the box was drawn on. Without this, an
-    // auto-advance or a stale handler could apply the crop to a different clip.
-    if (cropSourceRef.current && cropSourceRef.current !== current.path) {
+    if (!isSameFileAsAction()) {
       showToast('⚠ File changed — crop cancelled, press C again')
       setCropMode(false)
       return
@@ -441,7 +465,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     } finally {
       setIsCropping(false)
     }
-  }, [current, cropRect, keepOriginal, tab, imageFiles, videoFiles, index, releaseVideo, showToast, addLog])
+  }, [current, cropRect, keepOriginal, tab, imageFiles, videoFiles, index, releaseVideo, showToast, addLog, isSameFileAsAction])
 
   // Export the crop box as a still PNG instead of a video. Useful when a clip
   // is really a static composite — a 2x2 of stills that never move — and only
@@ -450,7 +474,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const exportFrameAsImage = useCallback(async () => {
     if (tab !== 'videos' || !current || !cropRect) return
 
-    if (cropSourceRef.current && cropSourceRef.current !== current.path) {
+    if (!isSameFileAsAction()) {
       showToast('⚠ File changed — cancelled, press C again')
       setCropMode(false)
       return
@@ -468,11 +492,15 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     try {
       const { outPath, name } = await window.api.saveFrame(current.path, dataUrl)
 
-      // Surface it in the Images tab straight away instead of making the user
-      // reload the folder to find it. Sorted in, to match media:getFiles order
-      // rather than dumping it at the end of the list.
-      setImageFiles(prev => [...prev, { path: outPath, name, type: 'image', ext: '.png' }]
-        .sort((a, b) => a.name.localeCompare(b.name)))
+      // Surface it in the Images tab straight away, in media:getFiles order.
+      // Inserting into a sorted list shifts every later index, so nudge
+      // imageIndex too — otherwise the Images tab silently ends up on a
+      // different file than it was on.
+      const nextImages = [...imageFiles, { path: outPath, name, type: 'image', ext: '.png' }]
+        .sort((a, b) => a.name.localeCompare(b.name))
+      const insertedAt = nextImages.findIndex(f => f.path === outPath)
+      setImageFiles(nextImages)
+      setImageIndex(i => (insertedAt <= i ? i + 1 : i))
 
       showToast(`🖼 Saved image: ${name}`)
       addLog(`Frame region  ${current.name}  →  ${name}`, 'save')
@@ -494,16 +522,27 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     } finally {
       setIsCropping(false)
     }
-  }, [tab, current, cropRect, keepOriginal, videoFiles, index, releaseVideo, advance, showToast, addLog])
+  }, [tab, current, cropRect, keepOriginal, imageFiles, videoFiles, index, releaseVideo, advance, showToast, addLog, isSameFileAsAction])
 
   // ── Rotate ────────────────────────────────────────────────
   // Rotation replaces the original, so it gets the same look-before-you-commit
   // step as crop rather than firing straight from the direction picker.
-  const requestRotatePreview = useCallback((direction) => {
+  const requestRotatePreview = useCallback(async (direction) => {
     setPendingRotate(false)
     if (!direction || !current) return
 
     const isImage = tab === 'images'
+
+    if (isImage && current.ext?.toLowerCase() === '.gif' &&
+        await window.api.isAnimatedGif(current.path)) {
+      showToast('❌ Animated GIFs cannot be rotated')
+      return
+    }
+
+    // Pin the file for the same reason crop does: the preview is a decision
+    // point, and the player can advance while it is open.
+    beginFileAction()
+
     const el = isImage ? imgRef.current : videoPlayerRef.current?.getVideoElement()
     const iw = el ? (el.naturalWidth || el.videoWidth || 0) : 0
     const ih = el ? (el.naturalHeight || el.videoHeight || 0) : 0
@@ -527,15 +566,22 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       direction,
       note: isImage ? undefined : 'current frame',
     })
-  }, [current, tab, showToast])
+  }, [current, tab, showToast, beginFileAction])
 
   const executeRotate = useCallback(async (direction) => {
     setPendingRotate(false)
     if (!direction || !current) return
 
+    if (!isSameFileAsAction()) {
+      showToast('⚠ File changed — rotate cancelled, press T again')
+      setRotatePreview(null)
+      return
+    }
+
     const isImage = tab === 'images'
     const sourceFiles = isImage ? imageFiles : videoFiles
     const applyFiles = isImage ? setImageFiles : setVideoFiles
+    const applyIndex = isImage ? setImageIndex : setVideoIndex
 
     setIsCropping(true)
     setCropKind('rotate')
@@ -553,9 +599,15 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         ext: current.ext,
       }
 
-      // The rotated copy replaces the original, which goes to the Recycle Bin.
-      await window.api.deleteFile(originalPath)
-      applyFiles([...sourceFiles.slice(0, index), newFile, ...sourceFiles.slice(index + 1)])
+      // Honours the same Keep original setting as crop, rather than always
+      // replacing regardless of what the user chose.
+      if (keepOriginal) {
+        applyFiles([...sourceFiles.slice(0, index + 1), newFile, ...sourceFiles.slice(index + 1)])
+        applyIndex(index + 1)
+      } else {
+        await window.api.deleteFile(originalPath)
+        applyFiles([...sourceFiles.slice(0, index), newFile, ...sourceFiles.slice(index + 1)])
+      }
 
       showToast(`⟳ Rotated ${ROTATE_LABELS[direction]} → ${newFile.name}`)
       addLog(`Rotated ${ROTATE_LABELS[direction]}  ${originalName}  →  ${newFile.name}`, 'split')
@@ -566,7 +618,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     } finally {
       setIsCropping(false)
     }
-  }, [current, tab, imageFiles, videoFiles, index, releaseVideo, showToast, addLog])
+  }, [current, tab, keepOriginal, imageFiles, videoFiles, index, releaseVideo, showToast, addLog, isSameFileAsAction])
 
   // ── Remove audio ──────────────────────────────────────────
   const removeAudio = useCallback(async () => {
@@ -576,6 +628,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     // a second press to confirm — same shape as the delete guard.
     if (!audioConfirmRef.current) {
       audioConfirmRef.current = true
+      beginFileAction()
       showToast('🔇 Press M again to remove audio')
       clearTimeout(audioConfirmTimer.current)
       audioConfirmTimer.current = setTimeout(() => { audioConfirmRef.current = false }, 2000)
@@ -583,6 +636,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
     audioConfirmRef.current = false
     clearTimeout(audioConfirmTimer.current)
+
+    if (!isSameFileAsAction()) {
+      showToast('⚠ File changed — press M again')
+      return
+    }
 
     setIsCropping(true)
     setCropKind('audio')
@@ -619,14 +677,15 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     } finally {
       setIsCropping(false)
     }
-  }, [tab, current, videoFiles, index, releaseVideo, showToast, addLog])
+  }, [tab, current, videoFiles, index, releaseVideo, showToast, addLog, beginFileAction, isSameFileAsAction])
 
   // ── Slideshow ─────────────────────────────────────────────
   const handleVideoEnded = useCallback(() => {
-    // Never auto-advance out from under an open crop box: the file would change
-    // while the user is still drawing, and the crop would land on the wrong clip.
-    if (slideshow && !cropMode) goNext()
-  }, [slideshow, cropMode, goNext])
+    // Never auto-advance out from under an open crop box, rotate chooser, or
+    // preview: the file would change mid-decision and the confirmed action
+    // would land on the wrong clip.
+    if (slideshow && !actionPending) goNext()
+  }, [slideshow, actionPending, goNext])
 
   // ── Keyboard ──────────────────────────────────────────────
   useEffect(() => {
@@ -1090,6 +1149,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           note={cropPreview.note}
           outW={cropPreview.outW}
           outH={cropPreview.outH}
+          keepOriginal={keepOriginal}
+          onKeepOriginalChange={setKeepOriginal}
           onConfirm={executeCrop}
           onBack={() => setCropPreview(null)}
         />
@@ -1104,6 +1165,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           note={rotatePreview.note}
           outW={rotatePreview.outW}
           outH={rotatePreview.outH}
+          keepOriginal={keepOriginal}
+          onKeepOriginalChange={setKeepOriginal}
           onConfirm={() => {
             const { direction } = rotatePreview
             setRotatePreview(null)

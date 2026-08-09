@@ -78,21 +78,46 @@ function uniqueOutputPath(filePath, suffix, forceExt) {
   return out
 }
 
+// Is this GIF animated?
+//
+// Counts Graphic Control Extension blocks (21 F9 04), one of which precedes
+// each frame — more than one means multiple frames. Read from the bytes rather
+// than ffprobe because ffprobe reports nb_frames as "N/A" for GIF often enough
+// that a numeric check silently passes everything through.
+async function isAnimatedGif(filePath) {
+  if (path.extname(filePath).toLowerCase() !== '.gif') return false
+
+  const buf = await fs.promises.readFile(filePath)
+  let blocks = 0
+  for (let i = 0; i < buf.length - 2; i++) {
+    if (buf[i] === 0x21 && buf[i + 1] === 0xf9 && buf[i + 2] === 0x04) {
+      blocks++
+      if (blocks > 1) return true
+    }
+  }
+  return false
+}
+
 // Re-encoding an animated GIF through the default encoder wrecks its palette
 // and can flatten the animation. Refuse rather than hand back a degraded file.
 async function rejectIfAnimatedGif(filePath) {
-  if (path.extname(filePath).toLowerCase() !== '.gif') return
-
-  const frames = await new Promise((resolve) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) return resolve(null)
-      const video = (metadata.streams || []).find(s => s.codec_type === 'video')
-      resolve(video ? Number(video.nb_frames) : null)
-    })
-  })
-
-  if (frames && frames > 1) {
+  if (await isAnimatedGif(filePath)) {
     throw new Error('Animated GIFs are not supported — re-encoding would destroy the animation')
+  }
+}
+
+// Names for every segment of one split, chosen together so a re-split does not
+// interleave "_part1_1" with a fresh "_part2".
+function splitOutputPaths(filePath, count) {
+  const ext = path.extname(filePath)
+  const base = path.basename(filePath, ext)
+  const dir = path.dirname(filePath)
+
+  for (let run = 0; ; run++) {
+    const tag = run === 0 ? '' : `_${run}`
+    const paths = Array.from({ length: count }, (_, i) =>
+      path.join(dir, `${base}_part${i + 1}${tag}${ext}`))
+    if (!paths.some(p => fs.existsSync(p))) return paths
   }
 }
 
@@ -202,6 +227,7 @@ ipcMain.handle('video:split', async (_event, { filePath, timestamps }) => {
 
       const duration = metadata.format.duration
       const sorted = [...new Set([0, ...timestamps])].sort((a, b) => a - b)
+      const outPaths = splitOutputPaths(filePath, sorted.length)
       const results = []
 
       const processSegment = (index) => {
@@ -209,7 +235,7 @@ ipcMain.handle('video:split', async (_event, { filePath, timestamps }) => {
 
         const start = sorted[index]
         const end = index < sorted.length - 1 ? sorted[index + 1] : duration
-        const outPath = uniqueOutputPath(filePath, `part${index + 1}`)
+        const outPath = outPaths[index]
 
         ffmpeg(filePath)
           .setStartTime(start)
@@ -395,6 +421,10 @@ ipcMain.handle('media:saveFrame', async (_event, { filePath, dataUrl }) => {
 
   return { outPath, name: path.basename(outPath) }
 })
+
+// Lets the renderer refuse an animated GIF before showing a preview the user
+// would confirm only to hit the same rejection from ffmpeg afterwards.
+ipcMain.handle('media:isAnimatedGif', async (_event, filePath) => isAnimatedGif(filePath))
 
 // Set rating in sidecar JSON
 ipcMain.handle('meta:setRating', async (_event, { filePath, rating }) => {

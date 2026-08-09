@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   cropImage: (args) => ipcRenderer.invoke('image:crop', args),
   removeAudio: (args) => ipcRenderer.invoke('video:removeAudio', args),
   rotateMedia: (args) => ipcRenderer.invoke('media:rotate', args),
+  isAnimatedGif: (filePath) => ipcRenderer.invoke('media:isAnimatedGif', filePath),
   // Encode progress for any long-running ffmpeg operation (crop, rotate)
   onProgress: (callback) => {
     const listener = (_event, percent) => callback(percent)

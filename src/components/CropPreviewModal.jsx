@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 export default function CropPreviewModal({
   src, rect, outW, outH, onConfirm, onBack,
   title = 'Preview', transform, note,
+  keepOriginal, onKeepOriginalChange,
 }) {
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight })
 
@@ -89,7 +90,20 @@ export default function CropPreviewModal({
 
         <div className="crop-preview-actions">
           <button className="crop-confirm" onClick={onConfirm}>✓ Save (Enter)</button>
-          <button className="crop-cancel" onClick={onBack}>← Back to editing (Esc)</button>
+          <button className="crop-cancel" onClick={onBack}>← Back (Esc)</button>
+
+          {/* Shown at the moment of commitment, so the choice is visible for
+              rotate too and not buried in the crop toolbar */}
+          {onKeepOriginalChange && (
+            <label className="crop-keep">
+              <input
+                type="checkbox"
+                checked={keepOriginal}
+                onChange={e => onKeepOriginalChange(e.target.checked)}
+              />
+              Keep original
+            </label>
+          )}
         </div>
       </div>
     </div>
