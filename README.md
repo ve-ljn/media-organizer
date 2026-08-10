@@ -2,9 +2,8 @@
 
 A keyboard-driven desktop app for quickly sorting images and videos into folders. Built with Electron + React + Vite.
 
-<img width="1275" height="796" alt="image" src="https://github.com/user-attachments/assets/6fd086a8-20de-4155-86db-9eeffae31f9d" />
+<img width="1279" height="802" alt="image" src="https://github.com/user-attachments/assets/12a908ad-61ce-4ac1-badc-b58de01cbe5d" />
 
-<img width="1275" height="795" alt="image" src="https://github.com/user-attachments/assets/207372d1-2f89-46c5-9a4b-7f1f892c6522" />
 
 ## Features
 
