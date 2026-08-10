@@ -4,6 +4,7 @@ import SplitModal from './SplitModal'
 import CropOverlay from './CropOverlay'
 import RotateModal from './RotateModal'
 import CropPreviewModal from './CropPreviewModal'
+import VideoThumb from './VideoThumb'
 import './CropOverlay.css'
 import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
 import useZoomPan from '../hooks/useZoomPan'
@@ -112,6 +113,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const goToFile = useCallback((file) => {
     const at = files.findIndex(f => f.path === file.path)
     if (at >= 0) setIndex(at)
+    // Hand the keyboard back to the viewer. The thumbnail is a button, so it
+    // keeps focus after a click and would swallow Space — the player would sit
+    // there not responding. Jumping to a file means you want to control it.
+    document.activeElement?.blur?.()
   }, [files, setIndex])
 
   // ── Toast ─────────────────────────────────────────────────
@@ -1046,7 +1051,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
                       loading="lazy"
                       decoding="async"
                     />
-                  : <div className="preview-video-icon">🎬</div>
+                  : <VideoThumb path={file.path} />
                 }
                 <div className="preview-name">{file.name}</div>
               </button>

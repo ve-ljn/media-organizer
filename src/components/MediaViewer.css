@@ -473,16 +473,8 @@
   object-fit: cover;
   display: block;
   background: #111;
-}
-
-.preview-video-icon {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg3);
-  font-size: 22px;
+  /* Clicks belong to the button wrapping this, not to the media element */
+  pointer-events: none;
 }
 
 .preview-name {
