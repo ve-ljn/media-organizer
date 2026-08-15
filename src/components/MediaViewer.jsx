@@ -6,6 +6,7 @@ import RotateModal from './RotateModal'
 import CropPreviewModal from './CropPreviewModal'
 import VideoThumb from './VideoThumb'
 import SmartImage from './SmartImage'
+import NewFolderModal from './NewFolderModal'
 import './CropOverlay.css'
 import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
 import useZoomPan from '../hooks/useZoomPan'
@@ -32,7 +33,7 @@ const CROP_PRESETS = {
   'Reset':       { x: 0,    y: 0,    w: 1,   h: 1   },
 }
 
-export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder, onSwitchFolder, onBackToSetup }) {
+export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder, onSwitchFolder, onHotkeysChange, onBackToSetup }) {
   const [imageFiles, setImageFiles] = useState(initialFiles.filter(f => f.type === 'image'))
   const [videoFiles, setVideoFiles] = useState(initialFiles.filter(f => f.type === 'video'))
   const [tab, setTab] = useState(initialFiles.some(f => f.type === 'image') ? 'images' : 'videos')
@@ -55,6 +56,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
   const [keepOriginal, setKeepOriginal] = useState(false)
   const [pendingRotate, setPendingRotate] = useState(false)
   const [currentIsHeic, setCurrentIsHeic] = useState(false)
+  const [pendingNewFolder, setPendingNewFolder] = useState(false)
   const [cropPreview, setCropPreview] = useState(null)     // { src, rect, outW, outH }
   const [rotatePreview, setRotatePreview] = useState(null) // { src, transform, outW, outH, direction }
   const [cropPanelPos, setCropPanelPos] = useState(null)   // viewport px, null = default spot
@@ -575,6 +577,40 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     }
   }, [tab, current, cropRect, keepOriginal, imageFiles, videoFiles, index, releaseVideo, advance, showToast, addLog, isSameFileAsAction])
 
+  // ── New destination folder ────────────────────────────────
+  // For the case where you are part-way through a folder and realise there is
+  // nowhere to file the thing you are looking at.
+  const freeHotkeySlot = hotkeys.findIndex(hk => !hk?.folder)
+
+  const requestNewFolder = useCallback(() => {
+    if (!sourceFolder) return
+    // Checked before opening the dialog: asking for a name and only then
+    // admitting there is nowhere to bind it would waste the interruption.
+    if (freeHotkeySlot < 0) {
+      showToast('All 6 hotkey slots are full — clear one in Setup first')
+      return
+    }
+    setPendingNewFolder(true)
+  }, [sourceFolder, freeHotkeySlot, showToast])
+
+  const createFolderAndBind = useCallback(async (name) => {
+    setPendingNewFolder(false)
+    if (freeHotkeySlot < 0 || !sourceFolder) return
+
+    try {
+      const folder = await window.api.createFolder({ parentFolder: sourceFolder, name })
+      const updated = hotkeys.map((hk, i) =>
+        i === freeHotkeySlot ? { folder, label: name } : hk)
+
+      await onHotkeysChange?.(updated)
+      showToast(`📁 ${name} → hotkey ${freeHotkeySlot + 1}`)
+      addLog(`Created folder  ${name}  →  hotkey ${freeHotkeySlot + 1}`, 'save')
+    } catch (e) {
+      showToast(`Could not create folder: ${e.message}`)
+      addLog(`Folder creation failed: ${e.message}`, 'delete')
+    }
+  }, [sourceFolder, freeHotkeySlot, hotkeys, onHotkeysChange, showToast, addLog])
+
   // ── HEIC conversion ───────────────────────────────────────
   // Display already works off the cached decode, but ffmpeg cannot read HEIC at
   // all, so crop and rotate need a real JPEG on disk.
@@ -810,7 +846,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
       // would both click the thumbnail and trigger play/advance.
       if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.preview-strip')) return
       // The rotate modal owns 1/2/3/Esc, and its preview owns Enter/Esc
-      if (pendingSplitTime !== null || isSplitting || isCropping || pendingRotate || rotatePreview) return
+      if (pendingSplitTime !== null || isSplitting || isCropping || pendingRotate || rotatePreview || pendingNewFolder) return
 
       // Crop mode owns the keyboard: swallow everything else so a stray digit
       // can't move or delete the file out from under an in-progress crop.
@@ -888,6 +924,9 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
         case 'e': case 'E':
           revealInFolder()
           break
+        case 'n': case 'N':
+          requestNewFolder()
+          break
         case 'r': case 'R':
           if (tab === 'videos' && videoPlayerRef.current) {
             const nowLooping = videoPlayerRef.current.loopAround()
@@ -921,7 +960,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview, revealInFolder])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview, revealInFolder, requestNewFolder, pendingNewFolder])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -1292,6 +1331,17 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
                 </div>
               )
             })}
+
+            <button
+              className="hk-pill hk-pill--new"
+              onClick={requestNewFolder}
+              disabled={freeHotkeySlot < 0}
+              title={freeHotkeySlot < 0
+                ? 'All 6 hotkey slots are full — clear one in Setup'
+                : `New subfolder, bound to hotkey ${freeHotkeySlot + 1} (N)`}
+            >
+              + New folder
+            </button>
           </div>
           {/* Hints describe actions on the current file, so drop them when
               the folder is empty; the pills above stay either way. */}
@@ -1307,6 +1357,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
             {tab === 'videos' && <span className="action-hint"><kbd>M</kbd> Mute</span>}
             <span className="action-hint"><kbd>T</kbd> Rotate</span>
             <span className="action-hint"><kbd>E</kbd> Explorer</span>
+            <span className="action-hint"><kbd>N</kbd> New folder</span>
             {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>L</kbd> Slideshow</span>}
             <span className="action-hint"><kbd>`</kbd> Log</span>
@@ -1347,6 +1398,15 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
             executeRotate(direction)
           }}
           onBack={() => { setRotatePreview(null); setPendingRotate(true) }}
+        />
+      )}
+
+      {pendingNewFolder && (
+        <NewFolderModal
+          parentFolder={sourceFolder}
+          slot={freeHotkeySlot}
+          onConfirm={createFolderAndBind}
+          onCancel={() => setPendingNewFolder(false)}
         />
       )}
 

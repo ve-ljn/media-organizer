@@ -509,6 +509,25 @@ ipcMain.handle('image:convertHeic', async (_event, filePath) => {
   return wicToJpeg(filePath, outPath)
 })
 
+// Create a subfolder of the folder being organized.
+// mkdir is recursive so an existing folder is reused rather than erroring —
+// binding a hotkey to a folder that already exists is a perfectly good outcome.
+ipcMain.handle('folder:create', async (_event, { parentFolder, name }) => {
+  const clean = String(name || '').trim()
+  if (!clean) throw new Error('Folder name is empty')
+  if (/[\\/:*?"<>|]/.test(clean)) throw new Error('A folder name cannot contain \\ / : * ? " < > |')
+
+  const target = path.join(parentFolder, clean)
+
+  // The name is user input, so make sure it cannot climb out of the parent
+  if (path.dirname(path.resolve(target)) !== path.resolve(parentFolder)) {
+    throw new Error('Invalid folder name')
+  }
+
+  await fs.promises.mkdir(target, { recursive: true })
+  return target
+})
+
 // Open Windows Explorer with the file selected. An escape hatch for anything
 // the viewer cannot render — from there the file can be opened elsewhere.
 ipcMain.handle('media:revealInFolder', async (_event, filePath) => {

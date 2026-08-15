@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('api', {
   rotateMedia: (args) => ipcRenderer.invoke('media:rotate', args),
   isAnimatedGif: (filePath) => ipcRenderer.invoke('media:isAnimatedGif', filePath),
   revealInFolder: (filePath) => ipcRenderer.invoke('media:revealInFolder', filePath),
+  createFolder: (args) => ipcRenderer.invoke('folder:create', args),
   heicPreview: (filePath) => ipcRenderer.invoke('image:heicPreview', filePath),
   convertHeic: (filePath) => ipcRenderer.invoke('image:convertHeic', filePath),
   // Encode progress for any long-running ffmpeg operation (crop, rotate)

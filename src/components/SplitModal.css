@@ -35,6 +35,23 @@
   color: #8888aa;
 }
 
+.new-folder-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  padding: 9px 12px;
+  margin-bottom: 14px;
+  outline: none;
+}
+
+.new-folder-input:focus {
+  border-color: var(--accent);
+}
+
 .split-modal-options {
   display: flex;
   flex-direction: column;

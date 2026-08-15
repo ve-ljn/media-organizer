@@ -30,6 +30,13 @@ export default function App() {
     setFiles(mediaFiles)
   }
 
+  // Hotkeys can now change mid-session (creating a folder binds one), so the
+  // store has to be kept in step rather than only written at setup.
+  const handleHotkeysChange = async (updated) => {
+    await window.api.setHotkeys(updated)
+    setHotkeys(updated)
+  }
+
   const handleStart = async (folder, updatedHotkeys) => {
     const mediaFiles = await window.api.getMediaFiles(folder)
     await window.api.setHotkeys(updatedHotkeys)
@@ -53,6 +60,7 @@ export default function App() {
             hotkeys={hotkeys}
             sourceFolder={sourceFolder}
             onSwitchFolder={handleSwitchFolder}
+            onHotkeysChange={handleHotkeysChange}
             onBackToSetup={() => setView('setup')}
           />
         </ErrorBoundary>

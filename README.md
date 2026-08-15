@@ -22,6 +22,7 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 - **Slideshow mode** — auto-advance to next video when current one ends (L)
 - **Loop mode** — loop ±2 seconds around current position (R)
 - **Show in Explorer** — open Windows Explorer with the current file selected (E), for anything the viewer can't render or that you want to open elsewhere
+- **New folder on the fly** — press N when you hit a file with nowhere to put it. Name it, and the subfolder is created inside the folder you're organizing and bound to the next free hotkey. The current file isn't moved; press the new number when you want it filed
 - **Jump between folders** — each hotkey pill has a 📂 button that switches the folder being organized, so you can move from one folder to the next without returning to setup
 - **HEIC support** — phone photos saved as HEIC (often with a misleading `.jpg` extension) display normally, decoded through Windows' own codec. A **Convert HEIC** button turns one into a real JPEG, which is what editing needs
 - **Activity log** — in-app console showing all moves, deletes, ratings, splits (`` ` ``)
@@ -43,6 +44,7 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 | `T` | Rotate — opens left / right / 180° chooser |
 | `M` `M` | Remove a video's audio track (press twice to confirm) |
 | `E` | Show the current file in Windows Explorer |
+| `N` | Create a subfolder and bind it to the next free hotkey |
 | `F` | Save current video frame as PNG |
 | `L` | Toggle slideshow (videos only) |
 | `R` | Toggle ±2s loop at current position (videos only) |
