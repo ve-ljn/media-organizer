@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { execFile } = require('child_process')
+const crypto = require('crypto')
 const Store = require('electron-store')
 const ffmpeg = require('fluent-ffmpeg')
 const ffmpegPath = require('ffmpeg-static')
@@ -119,6 +120,63 @@ function splitOutputPaths(filePath, count) {
       path.join(dir, `${base}_part${i + 1}${tag}${ext}`))
     if (!paths.some(p => fs.existsSync(p))) return paths
   }
+}
+
+// ── HEIC ──────────────────────────────────────────────────
+//
+// Phone cameras produce HEIC, often saved with a .jpg extension. Chromium has
+// no HEIC decoder, so those files render as broken images, and the bundled
+// ffmpeg 4.4 cannot read them either — it parses them as MP4 and fails on the
+// missing moov atom. Windows itself can decode them (that is why Explorer shows
+// thumbnails), so we borrow its codec through WIC rather than adding a decoder.
+
+// Detected from the ISO-BMFF brand, not the extension, which is the whole point
+async function isHeic(filePath) {
+  let handle
+  try {
+    handle = await fs.promises.open(filePath, 'r')
+    const { buffer, bytesRead } = await handle.read(Buffer.alloc(12), 0, 12, 0)
+    if (bytesRead < 12 || buffer.toString('latin1', 4, 8) !== 'ftyp') return false
+    const brand = buffer.toString('latin1', 8, 12)
+    return ['heic', 'heix', 'hevc', 'hevx', 'heim', 'heis', 'mif1', 'msf1'].includes(brand)
+  } catch {
+    return false
+  } finally {
+    await handle?.close()
+  }
+}
+
+// Decode via Windows Imaging Component and re-encode as JPEG. Paths go through
+// environment variables so nothing is interpolated into the command string.
+function wicToJpeg(inPath, outPath) {
+  const script = `
+    Add-Type -AssemblyName PresentationCore
+    $decoder = [System.Windows.Media.Imaging.BitmapDecoder]::Create(
+      (New-Object System.Uri($env:HEIC_IN)), 'None', 'OnLoad')
+    $encoder = New-Object System.Windows.Media.Imaging.JpegBitmapEncoder
+    $encoder.QualityLevel = 92
+    $encoder.Frames.Add($decoder.Frames[0])
+    $stream = [System.IO.File]::Create($env:HEIC_OUT)
+    $encoder.Save($stream)
+    $stream.Close()
+  `
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { windowsHide: true, env: { ...process.env, HEIC_IN: inPath, HEIC_OUT: outPath } },
+      (err, _stdout, stderr) => {
+        if (err) {
+          // Most likely cause: HEIF Image Extensions not installed on this machine
+          return reject(new Error(
+            `Windows could not decode this HEIC file. ${(stderr || err.message).trim().split('\n')[0]}`
+          ))
+        }
+        resolve(outPath)
+      }
+    )
+  })
 }
 
 // Quality flags per still-image container; codec defaults are lossy for photos
@@ -420,6 +478,42 @@ ipcMain.handle('media:saveFrame', async (_event, { filePath, dataUrl }) => {
   await fs.promises.writeFile(outPath, Buffer.from(base64, 'base64'))
 
   return { outPath, name: path.basename(outPath) }
+})
+
+// Decode a HEIC for display only, cached in userData so a file is converted
+// once. Returns null for anything that is not HEIC, so callers can use this as
+// a plain fallback when an <img> fails to load.
+ipcMain.handle('image:heicPreview', async (_event, filePath) => {
+  if (!(await isHeic(filePath))) return null
+
+  const stat = await fs.promises.stat(filePath)
+  const key = crypto.createHash('sha1')
+    .update(`${filePath}:${stat.mtimeMs}:${stat.size}`)
+    .digest('hex')
+
+  const cacheDir = path.join(app.getPath('userData'), 'heic-cache')
+  await fs.promises.mkdir(cacheDir, { recursive: true })
+
+  const outPath = path.join(cacheDir, `${key}.jpg`)
+  if (fs.existsSync(outPath)) return outPath
+
+  return wicToJpeg(filePath, outPath)
+})
+
+// Convert a HEIC into a real JPEG next to the original. Display works off the
+// cache above, but ffmpeg still cannot read HEIC, so crop and rotate need an
+// actual JPEG on disk.
+ipcMain.handle('image:convertHeic', async (_event, filePath) => {
+  if (!(await isHeic(filePath))) throw new Error('This file is not HEIC')
+  const outPath = uniqueOutputPath(filePath, 'converted', '.jpg')
+  return wicToJpeg(filePath, outPath)
+})
+
+// Open Windows Explorer with the file selected. An escape hatch for anything
+// the viewer cannot render — from there the file can be opened elsewhere.
+ipcMain.handle('media:revealInFolder', async (_event, filePath) => {
+  shell.showItemInFolder(filePath)
+  return true
 })
 
 // Lets the renderer refuse an animated GIF before showing a preview the user

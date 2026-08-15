@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { toFileUrl } from '../utils'
 
 // A poster frame for the preview strip.
@@ -10,8 +10,32 @@ import { toFileUrl } from '../utils'
 //
 // It lands slightly into the clip — plenty of videos open on a black or fading
 // frame, which would make every thumbnail look identical.
+// Mounting is deferred until the thumbnail scrolls near the viewport. Unlike an
+// <img>, a <video> has no lazy attribute — it opens the file and seeks the
+// moment it mounts — so a long strip would hit the disk once per entry up
+// front. Once mounted it stays mounted, to avoid re-seeking on every scroll.
 export default function VideoThumb({ path }) {
   const ref = useRef(null)
+  const holderRef = useRef(null)
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    const holder = holderRef.current
+    if (!holder) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setMounted(true)
+          observer.disconnect()
+        }
+      },
+      { root: holder.closest('.preview-strip'), rootMargin: '300px' },
+    )
+
+    observer.observe(holder)
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     const video = ref.current
@@ -24,17 +48,23 @@ export default function VideoThumb({ path }) {
 
     video.addEventListener('loadedmetadata', seekIn)
     return () => video.removeEventListener('loadedmetadata', seekIn)
-  }, [path])
+  }, [path, mounted])
 
   return (
-    <video
-      ref={ref}
-      src={toFileUrl(path)}
-      className="preview-thumb"
-      preload="metadata"
-      muted
-      playsInline
-      tabIndex={-1}
-    />
+    <div ref={holderRef} className="preview-thumb-holder">
+      {mounted ? (
+        <video
+          ref={ref}
+          src={toFileUrl(path)}
+          className="preview-thumb"
+          preload="metadata"
+          muted
+          playsInline
+          tabIndex={-1}
+        />
+      ) : (
+        <div className="preview-thumb-placeholder">🎬</div>
+      )}
+    </div>
   )
 }

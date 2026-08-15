@@ -21,6 +21,9 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 - **Zoom & pan** — scroll to zoom, drag to pan, minimap overlay when zoomed
 - **Slideshow mode** — auto-advance to next video when current one ends (L)
 - **Loop mode** — loop ±2 seconds around current position (R)
+- **Show in Explorer** — open Windows Explorer with the current file selected (E), for anything the viewer can't render or that you want to open elsewhere
+- **Jump between folders** — each hotkey pill has a 📂 button that switches the folder being organized, so you can move from one folder to the next without returning to setup
+- **HEIC support** — phone photos saved as HEIC (often with a misleading `.jpg` extension) display normally, decoded through Windows' own codec. A **Convert HEIC** button turns one into a real JPEG, which is what editing needs
 - **Activity log** — in-app console showing all moves, deletes, ratings, splits (`` ` ``)
 - **Recycle Bin** — deletes send files to the Recycle Bin, not permanent (D)
 - **Persistent session** — source folder and hotkey config are remembered across app restarts
@@ -39,6 +42,7 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 | `C` | Enter crop mode (images and videos) |
 | `T` | Rotate — opens left / right / 180° chooser |
 | `M` `M` | Remove a video's audio track (press twice to confirm) |
+| `E` | Show the current file in Windows Explorer |
 | `F` | Save current video frame as PNG |
 | `L` | Toggle slideshow (videos only) |
 | `R` | Toggle ±2s loop at current position (videos only) |
@@ -88,6 +92,22 @@ On a video, `Shift+Enter` saves the boxed region of the current frame as a PNG i
 Animated GIFs are refused rather than re-encoded, since that would destroy the animation.
 
 Crop, rotate, and audio removal all pin the file they were started on. If the player advances underneath an open box or dialog — slideshow reaching the end of a clip is the usual way — the action is cancelled rather than applied to whatever is on screen by then.
+
+## HEIC files
+
+Phones commonly produce HEIC, and plenty of export tools save it with a `.jpg`
+extension. Chromium cannot decode HEIC, so those files would otherwise render as
+broken images — and the bundled ffmpeg 4.4 can't read them either, so cropping
+or rotating one fails on a missing `moov` atom.
+
+Format is detected from the file's ISO-BMFF brand rather than its extension.
+Display goes through Windows' own HEIF codec (WIC, the same one Explorer uses
+for thumbnails), cached per file in `%APPDATA%\media-organizer\heic-cache\`, so
+each file is decoded once. Editing needs a genuine JPEG, so crop and rotate ask
+you to press **Convert HEIC** first, which writes a `_converted.jpg` alongside.
+
+This relies on **HEIF Image Extensions** being installed in Windows. If it isn't,
+conversion reports that Windows could not decode the file.
 
 ## Metadata
 

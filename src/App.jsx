@@ -20,6 +20,16 @@ export default function App() {
     })
   }, [])
 
+  // Jump straight from organizing one folder to another, without going back to
+  // setup. MediaViewer is keyed on the folder so it remounts clean: indices,
+  // tab, zoom, and filters all belong to the folder being organized.
+  const handleSwitchFolder = async (folder) => {
+    const mediaFiles = await window.api.getMediaFiles(folder)
+    await window.api.setSourceFolder(folder)
+    setSourceFolder(folder)
+    setFiles(mediaFiles)
+  }
+
   const handleStart = async (folder, updatedHotkeys) => {
     const mediaFiles = await window.api.getMediaFiles(folder)
     await window.api.setHotkeys(updatedHotkeys)
@@ -38,8 +48,11 @@ export default function App() {
       {view === 'organize' && (
         <ErrorBoundary>
           <MediaViewer
+            key={sourceFolder}
             files={files}
             hotkeys={hotkeys}
+            sourceFolder={sourceFolder}
+            onSwitchFolder={handleSwitchFolder}
             onBackToSetup={() => setView('setup')}
           />
         </ErrorBoundary>

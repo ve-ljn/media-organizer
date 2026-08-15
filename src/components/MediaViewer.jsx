@@ -5,6 +5,7 @@ import CropOverlay from './CropOverlay'
 import RotateModal from './RotateModal'
 import CropPreviewModal from './CropPreviewModal'
 import VideoThumb from './VideoThumb'
+import SmartImage from './SmartImage'
 import './CropOverlay.css'
 import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
 import useZoomPan from '../hooks/useZoomPan'
@@ -12,9 +13,12 @@ import useMediaNavigation from '../hooks/useMediaNavigation'
 import { toFileUrl } from '../utils'
 import './MediaViewer.css'
 
-// How much context the preview strip shows either side of the current file
-const STRIP_BEFORE = 3
-const STRIP_AHEAD = 10
+// How much context the preview strip shows either side of the current file.
+// The window is capped rather than unbounded because every entry is a real
+// element: images lazy-load, and video thumbnails only mount once they scroll
+// into view, so 100 costs little until it is actually scrolled through.
+const STRIP_BEFORE = 10
+const STRIP_AHEAD = 89
 
 const ROTATE_LABELS = { left: 'left', right: 'right', flip: '180°' }
 const ROTATE_TRANSFORMS = { left: 'rotate(-90deg)', right: 'rotate(90deg)', flip: 'rotate(180deg)' }
@@ -28,7 +32,7 @@ const CROP_PRESETS = {
   'Reset':       { x: 0,    y: 0,    w: 1,   h: 1   },
 }
 
-export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetup }) {
+export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder, onSwitchFolder, onBackToSetup }) {
   const [imageFiles, setImageFiles] = useState(initialFiles.filter(f => f.type === 'image'))
   const [videoFiles, setVideoFiles] = useState(initialFiles.filter(f => f.type === 'video'))
   const [tab, setTab] = useState(initialFiles.some(f => f.type === 'image') ? 'images' : 'videos')
@@ -50,6 +54,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
   const [playerNonce, setPlayerNonce] = useState(0)
   const [keepOriginal, setKeepOriginal] = useState(false)
   const [pendingRotate, setPendingRotate] = useState(false)
+  const [currentIsHeic, setCurrentIsHeic] = useState(false)
   const [cropPreview, setCropPreview] = useState(null)     // { src, rect, outW, outH }
   const [rotatePreview, setRotatePreview] = useState(null) // { src, transform, outW, outH, direction }
   const [cropPanelPos, setCropPanelPos] = useState(null)   // viewport px, null = default spot
@@ -146,6 +151,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     setCropPreview(null)
     setPendingRotate(false)
     setRotatePreview(null)
+    setCurrentIsHeic(false)
     // Disarm any pending confirmations when navigating away
     deleteConfirmRef.current = false
     clearTimeout(deleteConfirmTimer.current)
@@ -399,6 +405,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
     const isImage = tab === 'images'
 
+    // ffmpeg cannot read HEIC, so this would fail with an obscure demuxer error
+    if (isImage && currentIsHeic) {
+      showToast('❌ Convert this HEIC to JPEG first')
+      setCropMode(false)
+      return
+    }
+
     // Catch this before the preview rather than after the user confirms one
     if (isImage && current.ext?.toLowerCase() === '.gif' &&
         await window.api.isAnimatedGif(current.path)) {
@@ -434,7 +447,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       }
       setCropPreview({ src: dataUrl, rect: null, outW, outH, note: 'current frame' })
     }
-  }, [current, cropRect, tab, showToast, isSameFileAsAction])
+  }, [current, cropRect, tab, currentIsHeic, showToast, isSameFileAsAction])
 
   const executeCrop = useCallback(async () => {
     if (!current || !cropRect) return
@@ -562,6 +575,59 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
   }, [tab, current, cropRect, keepOriginal, imageFiles, videoFiles, index, releaseVideo, advance, showToast, addLog, isSameFileAsAction])
 
+  // ── HEIC conversion ───────────────────────────────────────
+  // Display already works off the cached decode, but ffmpeg cannot read HEIC at
+  // all, so crop and rotate need a real JPEG on disk.
+  const convertHeic = useCallback(async () => {
+    if (!current) return
+
+    setIsCropping(true)
+    setCropKind('convert')
+    const originalPath = current.path
+    const originalName = current.name
+
+    try {
+      const outPath = await window.api.convertHeic(originalPath)
+      const newFile = {
+        path: outPath,
+        name: outPath.split(/[\\/]/).pop(),
+        type: 'image',
+        ext: '.jpg',
+      }
+
+      if (keepOriginal) {
+        setImageFiles([...imageFiles.slice(0, index + 1), newFile, ...imageFiles.slice(index + 1)])
+        setImageIndex(index + 1)
+      } else {
+        await window.api.deleteFile(originalPath)
+        setImageFiles([...imageFiles.slice(0, index), newFile, ...imageFiles.slice(index + 1)])
+      }
+
+      setCurrentIsHeic(false)
+      showToast(`⇄ Converted → ${newFile.name}`)
+      addLog(`Converted HEIC  ${originalName}  →  ${newFile.name}`, 'save')
+    } catch (e) {
+      showToast(`Convert failed: ${e.message}`)
+      addLog(`Convert failed: ${e.message}`, 'delete')
+    } finally {
+      setIsCropping(false)
+    }
+  }, [current, keepOriginal, imageFiles, index, showToast, addLog])
+
+  // ── Reveal in Explorer ────────────────────────────────────
+  const revealInFolder = useCallback(async () => {
+    if (!current) {
+      showToast('Nothing to show')
+      return
+    }
+    try {
+      await window.api.revealInFolder(current.path)
+      addLog(`Opened in Explorer  ${current.name}`, 'save')
+    } catch (e) {
+      showToast(`Could not open Explorer: ${e.message}`)
+    }
+  }, [current, showToast, addLog])
+
   // ── Rotate ────────────────────────────────────────────────
   // Rotation replaces the original, so it gets the same look-before-you-commit
   // step as crop rather than firing straight from the direction picker.
@@ -570,6 +636,11 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     if (!direction || !current) return
 
     const isImage = tab === 'images'
+
+    if (isImage && currentIsHeic) {
+      showToast('❌ Convert this HEIC to JPEG first')
+      return
+    }
 
     if (isImage && current.ext?.toLowerCase() === '.gif' &&
         await window.api.isAnimatedGif(current.path)) {
@@ -604,7 +675,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
       direction,
       note: isImage ? undefined : 'current frame',
     })
-  }, [current, tab, showToast, beginFileAction])
+  }, [current, tab, currentIsHeic, showToast, beginFileAction])
 
   const executeRotate = useCallback(async (direction) => {
     setPendingRotate(false)
@@ -814,6 +885,9 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         case 't': case 'T':
           if (current) setPendingRotate(true)
           break
+        case 'e': case 'E':
+          revealInFolder()
+          break
         case 'r': case 'R':
           if (tab === 'videos' && videoPlayerRef.current) {
             const nowLooping = videoPlayerRef.current.loopAround()
@@ -847,7 +921,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview, revealInFolder])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -938,11 +1012,31 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
 
         {files.length > 0 && (
           <button
-            className="btn-rotate"
+            className="btn-tool"
             onClick={() => setPendingRotate(true)}
             title="Rotate this file (T)"
           >
             ⟳ Rotate
+          </button>
+        )}
+
+        {files.length > 0 && (
+          <button
+            className="btn-tool"
+            onClick={revealInFolder}
+            title="Show this file in Windows Explorer (E)"
+          >
+            📁 Explorer
+          </button>
+        )}
+
+        {currentIsHeic && (
+          <button
+            className="btn-tool btn-tool--warn"
+            onClick={convertHeic}
+            title="This file is HEIC despite its extension. Editing needs a real JPEG."
+          >
+            ⇄ Convert HEIC
           </button>
         )}
 
@@ -986,13 +1080,14 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
             >
               {tab === 'images' && (
                 <>
-                  <img
+                  <SmartImage
                     ref={imgRef}
                     key={current.path}
-                    src={toFileUrl(current.path)}
+                    path={current.path}
                     className="viewer-image"
                     alt={current.name}
                     draggable={false}
+                    onFallback={() => setCurrentIsHeic(true)}
                   />
                   {cropMode && cropRect && (
                     <CropOverlay mediaRef={imgRef} rect={cropRect} onChange={setCropRect} />
@@ -1043,8 +1138,8 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
                 aria-current={isCurrent ? 'true' : undefined}
               >
                 {file.type === 'image'
-                  ? <img
-                      src={toFileUrl(file.path)}
+                  ? <SmartImage
+                      path={file.path}
                       className="preview-thumb"
                       alt={file.name}
                       draggable={false}
@@ -1160,6 +1255,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
           {cropKind === 'image' && <div className="crop-bar-label">✂ Cropping image…</div>}
           {cropKind === 'still' && <div className="crop-bar-label">🖼 Saving frame…</div>}
           {cropKind === 'audio' && <div className="crop-bar-label">🔇 Removing audio…</div>}
+          {cropKind === 'convert' && <div className="crop-bar-label">⇄ Converting HEIC to JPEG…</div>}
           {cropKind === 'rotate' && (
             <>
               <div className="crop-bar-label">⟳ Rotating… {cropProgress}%</div>
@@ -1171,17 +1267,35 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
         </div>
       )}
 
-      {/* Bottom bar */}
-      {files.length > 0 && (
-        <div className="viewer-bottombar">
+      {/* Bottom bar. Always rendered: it carries the folder-switch pills, and
+          hiding it on an empty folder would leave no way out but Setup. */}
+      <div className="viewer-bottombar">
           <div className="hk-pills">
-            {hotkeys.map((hk, i) => hk?.folder && (
-              <div key={i} className="hk-pill">
-                <kbd>{i + 1}</kbd>
-                <span>{hk.label || hk.folder.split(/[\\/]/).pop()}</span>
-              </div>
-            ))}
+            {hotkeys.map((hk, i) => {
+              if (!hk?.folder) return null
+              const name = hk.label || hk.folder.split(/[\\/]/).pop()
+              const isCurrent = hk.folder === sourceFolder
+              return (
+                <div key={i} className={`hk-pill ${isCurrent ? 'hk-pill--current' : ''}`}>
+                  <kbd>{i + 1}</kbd>
+                  <span>{name}</span>
+                  <button
+                    className="hk-jump"
+                    onClick={() => onSwitchFolder?.(hk.folder)}
+                    disabled={isCurrent}
+                    title={isCurrent
+                      ? `Already organizing ${name}`
+                      : `Organize ${name} instead of the current folder`}
+                  >
+                    📂
+                  </button>
+                </div>
+              )
+            })}
           </div>
+          {/* Hints describe actions on the current file, so drop them when
+              the folder is empty; the pills above stay either way. */}
+          {files.length > 0 && (
           <div className="action-hints">
             <span className="action-hint"><kbd>←</kbd><kbd>→</kbd> Navigate</span>
             <span className="action-hint"><kbd>D</kbd><kbd>D</kbd> Delete</span>
@@ -1192,12 +1306,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, onBackToSetu
             <span className="action-hint"><kbd>C</kbd> Crop</span>
             {tab === 'videos' && <span className="action-hint"><kbd>M</kbd> Mute</span>}
             <span className="action-hint"><kbd>T</kbd> Rotate</span>
+            <span className="action-hint"><kbd>E</kbd> Explorer</span>
             {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}
             {tab === 'videos' && <span className="action-hint"><kbd>L</kbd> Slideshow</span>}
             <span className="action-hint"><kbd>`</kbd> Log</span>
           </div>
-        </div>
-      )}
+          )}
+      </div>
 
       {toast && <div className="toast">{toast}</div>}
 
