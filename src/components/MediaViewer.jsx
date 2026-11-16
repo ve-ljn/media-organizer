@@ -6,7 +6,7 @@ import RotateModal from './RotateModal'
 import CropPreviewModal from './CropPreviewModal'
 import VideoThumb from './VideoThumb'
 import SmartImage from './SmartImage'
-import NewFolderModal from './NewFolderModal'
+import ActionMenu from './ActionMenu'
 import './CropOverlay.css'
 import useActivityLog, { LOG_TYPES } from '../hooks/useActivityLog'
 import useZoomPan from '../hooks/useZoomPan'
@@ -56,7 +56,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
   const [keepOriginal, setKeepOriginal] = useState(false)
   const [pendingRotate, setPendingRotate] = useState(false)
   const [currentIsHeic, setCurrentIsHeic] = useState(false)
-  const [pendingNewFolder, setPendingNewFolder] = useState(false)
+  const [showMenu, setShowMenu] = useState(false)
   const [cropPreview, setCropPreview] = useState(null)     // { src, rect, outW, outH }
   const [rotatePreview, setRotatePreview] = useState(null) // { src, transform, outW, outH, direction }
   const [cropPanelPos, setCropPanelPos] = useState(null)   // viewport px, null = default spot
@@ -139,12 +139,33 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
   const { goNext, goPrev, advance } = useMediaNavigation({ index, files, setIndex, ratingFilter, ratingsMap, showToast, setSlideshow })
 
   // ── Refactor 3: releaseVideo as useCallback ───────────────
+  // The preview strip keeps a <video> mounted per thumbnail, so the current
+  // file is open in two places at once. Windows refuses to rename or delete a
+  // file while any handle is on it, so the thumbnail has to let go as well —
+  // releasing only the player left every move failing with EBUSY.
+  const thumbRefs = useRef(new Map())
+
   const releaseVideo = useCallback(async () => {
-    if (tab === 'videos' && videoPlayerRef.current) {
+    if (tab !== 'videos') return
+    let releasedAny = false
+    if (videoPlayerRef.current) {
       videoPlayerRef.current.release()
-      await new Promise(r => setTimeout(r, 150))
+      releasedAny = true
     }
-  }, [tab])
+    const thumb = current && thumbRefs.current.get(current.path)
+    if (thumb) {
+      thumb.release()
+      releasedAny = true
+    }
+    if (releasedAny) await new Promise(r => setTimeout(r, 150))
+  }, [tab, current])
+
+  // Put the thumbnail back when the operation that released it did not go
+  // through — on success the file leaves the list and the thumbnail unmounts
+  // on its own, but on failure it would otherwise sit blank until navigation.
+  const restoreThumb = useCallback((path) => {
+    thumbRefs.current.get(path)?.restore()
+  }, [])
 
   // ── Reset per-file state when file changes ────────────────
   useEffect(() => {
@@ -225,8 +246,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     } catch (e) {
       showToast(`Error: ${e.message}`)
       addLog(`Error moving ${current.name}: ${e.message}`, 'delete')
+      restoreThumb(current.path)
+      if (tab === 'videos') setPlayerNonce(n => n + 1)
     }
-  }, [current, files, hotkeys, index, tab, releaseVideo, advance, showToast, addLog])
+  }, [current, files, hotkeys, index, tab, releaseVideo, advance, showToast, addLog, restoreThumb])
 
   const deleteFile = useCallback(async () => {
     if (!current) return
@@ -257,8 +280,10 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     } catch (e) {
       showToast(`Error: ${e.message}`)
       addLog(`Error deleting ${current.name}: ${e.message}`, 'delete')
+      restoreThumb(current.path)
+      if (tab === 'videos') setPlayerNonce(n => n + 1)
     }
-  }, [current, files, index, tab, releaseVideo, advance, showToast, addLog])
+  }, [current, files, index, tab, releaseVideo, advance, showToast, addLog, restoreThumb])
 
   const saveRating = useCallback(async (newRating, file) => {
     if (!file) return
@@ -577,37 +602,41 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     }
   }, [tab, current, cropRect, keepOriginal, imageFiles, videoFiles, index, releaseVideo, advance, showToast, addLog, isSameFileAsAction])
 
-  // ── New destination folder ────────────────────────────────
+  // ── Add a destination folder ──────────────────────────────
   // For the case where you are part-way through a folder and realise there is
-  // nowhere to file the thing you are looking at.
+  // nowhere to file the thing you are looking at. The picker has its own New
+  // folder button, so creating one on the spot is still possible.
   const freeHotkeySlot = hotkeys.findIndex(hk => !hk?.folder)
 
-  const requestNewFolder = useCallback(() => {
-    if (!sourceFolder) return
-    // Checked before opening the dialog: asking for a name and only then
-    // admitting there is nowhere to bind it would waste the interruption.
+  const addFolderShortcut = useCallback(async () => {
+    // Checked before opening the picker: letting someone browse and choose,
+    // only to be told there is nowhere to bind it, wastes the interruption.
     if (freeHotkeySlot < 0) {
       showToast('All 6 hotkey slots are full — clear one in Setup first')
       return
     }
-    setPendingNewFolder(true)
-  }, [sourceFolder, freeHotkeySlot, showToast])
-
-  const createFolderAndBind = useCallback(async (name) => {
-    setPendingNewFolder(false)
-    if (freeHotkeySlot < 0 || !sourceFolder) return
 
     try {
-      const folder = await window.api.createFolder({ parentFolder: sourceFolder, name })
+      // Opens on the folder being organized, where destinations usually live
+      const folder = await window.api.selectFolder(sourceFolder)
+      if (!folder) return
+
+      const existing = hotkeys.findIndex(hk => hk?.folder === folder)
+      if (existing >= 0) {
+        showToast(`Already on hotkey ${existing + 1}`)
+        return
+      }
+
+      const label = folder.split(/[\\/]/).filter(Boolean).pop()
       const updated = hotkeys.map((hk, i) =>
-        i === freeHotkeySlot ? { folder, label: name } : hk)
+        i === freeHotkeySlot ? { folder, label } : hk)
 
       await onHotkeysChange?.(updated)
-      showToast(`📁 ${name} → hotkey ${freeHotkeySlot + 1}`)
-      addLog(`Created folder  ${name}  →  hotkey ${freeHotkeySlot + 1}`, 'save')
+      showToast(`📁 ${label} → hotkey ${freeHotkeySlot + 1}`)
+      addLog(`Added folder  ${label}  →  hotkey ${freeHotkeySlot + 1}`, 'save')
     } catch (e) {
-      showToast(`Could not create folder: ${e.message}`)
-      addLog(`Folder creation failed: ${e.message}`, 'delete')
+      showToast(`Could not add folder: ${e.message}`)
+      addLog(`Adding folder failed: ${e.message}`, 'delete')
     }
   }, [sourceFolder, freeHotkeySlot, hotkeys, onHotkeysChange, showToast, addLog])
 
@@ -846,7 +875,20 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
       // would both click the thumbnail and trigger play/advance.
       if ((e.key === 'Enter' || e.key === ' ') && e.target.closest?.('.preview-strip')) return
       // The rotate modal owns 1/2/3/Esc, and its preview owns Enter/Esc
-      if (pendingSplitTime !== null || isSplitting || isCropping || pendingRotate || rotatePreview || pendingNewFolder) return
+      if (pendingSplitTime !== null || isSplitting || isCropping || pendingRotate || rotatePreview) return
+
+      // The menu is a reference card, not a mode: it does not swallow keys.
+      // Anything other than its own toggle falls through to the action below
+      // and closes the menu on the way, so reading it and acting are one step.
+      if (e.key === '.') {
+        e.preventDefault()
+        setShowMenu(v => !v)
+        return
+      }
+      if (showMenu) {
+        setShowMenu(false)
+        if (e.key === 'Escape') return
+      }
 
       // Crop mode owns the keyboard: swallow everything else so a stray digit
       // can't move or delete the file out from under an in-progress crop.
@@ -875,7 +917,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
       }
 
       switch (e.key) {
-        case '`':
+        case 'o': case 'O':
           setShowConsole(v => !v)
           break
         case 'ArrowRight':
@@ -925,7 +967,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
           revealInFolder()
           break
         case 'n': case 'N':
-          requestNewFolder()
+          addFolderShortcut()
           break
         case 'r': case 'R':
           if (tab === 'videos' && videoPlayerRef.current) {
@@ -960,7 +1002,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview, revealInFolder, requestNewFolder, pendingNewFolder])
+  }, [goNext, goPrev, deleteFile, moveFile, saveRating, tab, changeZoom, resetZoom, zoom, showToast, addLog, current, setShowConsole, setPan, pendingSplitTime, isSplitting, cropMode, isCropping, enterCropMode, executeCrop, exportFrameAsImage, removeAudio, pendingRotate, cropPreview, requestCropPreview, rotatePreview, revealInFolder, addFolderShortcut, showMenu])
 
   const progressPct = files.length > 1 ? (index / (files.length - 1)) * 100 : 100
   const mediaCursor = zoom > 1 ? (dragActive ? 'grabbing' : 'grab') : 'default'
@@ -1089,7 +1131,7 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
           </button>
         )}
 
-        <button className={`btn-console-toggle ${showConsole ? 'active' : ''}`} onClick={() => setShowConsole(v => !v)} title="Activity log (`)">
+        <button className={`btn-console-toggle ${showConsole ? 'active' : ''}`} onClick={() => setShowConsole(v => !v)} title="Activity log (O)">
           📋 Log {logEntries.length > 0 && <span className="log-count">{logEntries.length}</span>}
         </button>
       </div>
@@ -1185,7 +1227,13 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
                       loading="lazy"
                       decoding="async"
                     />
-                  : <VideoThumb path={file.path} />
+                  : <VideoThumb
+                      path={file.path}
+                      ref={el => {
+                        if (el) thumbRefs.current.set(file.path, el)
+                        else thumbRefs.current.delete(file.path)
+                      }}
+                    />
                 }
                 <div className="preview-name">{file.name}</div>
               </button>
@@ -1308,6 +1356,14 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
 
       {/* Bottom bar. Always rendered: it carries the folder-switch pills, and
           hiding it on an empty folder would leave no way out but Setup. */}
+      {showMenu && files.length > 0 && (
+        <ActionMenu
+          tab={tab}
+          currentIsHeic={currentIsHeic}
+          onClose={() => setShowMenu(false)}
+        />
+      )}
+
       <div className="viewer-bottombar">
           <div className="hk-pills">
             {hotkeys.map((hk, i) => {
@@ -1334,34 +1390,21 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
 
             <button
               className="hk-pill hk-pill--new"
-              onClick={requestNewFolder}
+              onClick={addFolderShortcut}
               disabled={freeHotkeySlot < 0}
               title={freeHotkeySlot < 0
                 ? 'All 6 hotkey slots are full — clear one in Setup'
-                : `New subfolder, bound to hotkey ${freeHotkeySlot + 1} (N)`}
+                : `Pick a folder to put on hotkey ${freeHotkeySlot + 1} (N)`}
             >
-              + New folder
+              + Add folder
             </button>
           </div>
-          {/* Hints describe actions on the current file, so drop them when
-              the folder is empty; the pills above stay either way. */}
+          {/* One entry instead of fourteen: the full list crowded the bar and
+              was skimmed past anyway. The menu carries it, on demand. */}
           {files.length > 0 && (
-          <div className="action-hints">
-            <span className="action-hint"><kbd>←</kbd><kbd>→</kbd> Navigate</span>
-            <span className="action-hint"><kbd>D</kbd><kbd>D</kbd> Delete</span>
-            <span className="action-hint"><kbd>Alt+1–5</kbd> Rate</span>
-            <span className="action-hint"><kbd>scroll</kbd> Zoom</span>
-            {tab === 'videos' && <span className="action-hint"><kbd>F</kbd> Snapshot</span>}
-            {tab === 'videos' && <span className="action-hint"><kbd>S</kbd> Split</span>}
-            <span className="action-hint"><kbd>C</kbd> Crop</span>
-            {tab === 'videos' && <span className="action-hint"><kbd>M</kbd> Mute</span>}
-            <span className="action-hint"><kbd>T</kbd> Rotate</span>
-            <span className="action-hint"><kbd>E</kbd> Explorer</span>
-            <span className="action-hint"><kbd>N</kbd> New folder</span>
-            {tab === 'videos' && <span className="action-hint"><kbd>R</kbd> Loop</span>}
-            {tab === 'videos' && <span className="action-hint"><kbd>L</kbd> Slideshow</span>}
-            <span className="action-hint"><kbd>`</kbd> Log</span>
-          </div>
+            <div className="action-hints">
+              <span className="action-hint"><kbd>.</kbd> Menu</span>
+            </div>
           )}
       </div>
 
@@ -1398,15 +1441,6 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
             executeRotate(direction)
           }}
           onBack={() => { setRotatePreview(null); setPendingRotate(true) }}
-        />
-      )}
-
-      {pendingNewFolder && (
-        <NewFolderModal
-          parentFolder={sourceFolder}
-          slot={freeHotkeySlot}
-          onConfirm={createFolderAndBind}
-          onCancel={() => setPendingNewFolder(false)}
         />
       )}
 

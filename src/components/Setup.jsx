@@ -21,7 +21,8 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
   }, [initialSourceFolder])
 
   const selectSourceFolder = async () => {
-    const folder = await window.api.selectFolder()
+    // Start where the current selection is, not wherever the shell last was
+    const folder = await window.api.selectFolder(sourceFolder)
     if (!folder) return
     setSourceFolder(folder)
     const files = await window.api.getMediaFiles(folder)
@@ -29,7 +30,9 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
   }
 
   const selectHotkeyFolder = async (index) => {
-    const folder = await window.api.selectFolder()
+    // Change reopens on that hotkey's own folder; an empty slot has none, so
+    // start from the source folder, which is usually where destinations live
+    const folder = await window.api.selectFolder(hotkeys[index]?.folder || sourceFolder)
     if (!folder) return
     const folderName = folder.split(/[\\/]/).pop()
     const updated = hotkeys.map((hk, i) =>

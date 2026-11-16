@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, useImperativeHandle, forwardRef } from 'react'
 import { toFileUrl } from '../utils'
 
 // A poster frame for the preview strip.
@@ -14,10 +14,30 @@ import { toFileUrl } from '../utils'
 // <img>, a <video> has no lazy attribute — it opens the file and seeks the
 // moment it mounts — so a long strip would hit the disk once per entry up
 // front. Once mounted it stays mounted, to avoid re-seeking on every scroll.
-export default function VideoThumb({ path }) {
-  const ref = useRef(null)
+//
+// Staying mounted means the file stays open, and Windows will not rename or
+// delete a file that any handle is still on. The current file is open twice —
+// here and in the player — so this exposes the same release()/restore() pair
+// the player has, for the viewer to call before it touches the file on disk.
+const VideoThumb = forwardRef(function VideoThumb({ path }, ref) {
+  const elRef = useRef(null)
   const holderRef = useRef(null)
   const [mounted, setMounted] = useState(false)
+  const [released, setReleased] = useState(false)
+
+  useImperativeHandle(ref, () => ({
+    release: () => {
+      const v = elRef.current
+      if (v) {
+        v.pause()
+        v.removeAttribute('src')
+        v.load()
+      }
+      setReleased(true)
+    },
+    // Only needed when the operation failed and the file is still there.
+    restore: () => setReleased(false),
+  }), [])
 
   useEffect(() => {
     const holder = holderRef.current
@@ -38,7 +58,7 @@ export default function VideoThumb({ path }) {
   }, [])
 
   useEffect(() => {
-    const video = ref.current
+    const video = elRef.current
     if (!video) return
 
     const seekIn = () => {
@@ -48,13 +68,13 @@ export default function VideoThumb({ path }) {
 
     video.addEventListener('loadedmetadata', seekIn)
     return () => video.removeEventListener('loadedmetadata', seekIn)
-  }, [path, mounted])
+  }, [path, mounted, released])
 
   return (
     <div ref={holderRef} className="preview-thumb-holder">
-      {mounted ? (
+      {mounted && !released ? (
         <video
-          ref={ref}
+          ref={elRef}
           src={toFileUrl(path)}
           className="preview-thumb"
           preload="metadata"
@@ -67,4 +87,6 @@ export default function VideoThumb({ path }) {
       )}
     </div>
   )
-}
+})
+
+export default VideoThumb

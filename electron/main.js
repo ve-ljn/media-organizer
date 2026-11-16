@@ -189,33 +189,96 @@ function imageQualityOptions(ext) {
 
 // ── IPC Handlers ──────────────────────────────────────────
 
-// Open folder picker dialog
-ipcMain.handle('dialog:selectFolder', async () => {
-  const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+// Open folder picker dialog.
+// defaultPath opens the browser on the folder already chosen rather than
+// wherever the shell was last pointed; a stale or missing path is dropped so
+// the dialog falls back to its own default instead of failing to open.
+ipcMain.handle('dialog:selectFolder', async (_event, defaultPath) => {
+  const options = { properties: ['openDirectory'] }
+  if (defaultPath && fs.existsSync(defaultPath)) options.defaultPath = defaultPath
+
+  const result = await dialog.showOpenDialog(options)
   return result.canceled ? null : result.filePaths[0]
 })
 
-// List all supported media files in a folder (non-recursive, sorted by name)
-ipcMain.handle('media:getFiles', async (_event, folderPath) => {
-  const entries = await fs.promises.readdir(folderPath, { withFileTypes: true })
-  const files = []
-  for (const entry of entries) {
-    if (!entry.isFile()) continue
-    const ext = path.extname(entry.name).toLowerCase()
-    const fullPath = path.join(folderPath, entry.name)
-    if (IMAGE_EXTENSIONS.includes(ext)) {
-      files.push({ path: fullPath, name: entry.name, type: 'image', ext })
-    } else if (VIDEO_EXTENSIONS.includes(ext)) {
-      files.push({ path: fullPath, name: entry.name, type: 'video', ext })
+// Walk a folder and everything under it, collecting supported media.
+//
+// name is the path relative to the folder being organized, not the bare
+// filename: subfolders routinely hold files with identical basenames, and a
+// list of six identical "IMG_0001.jpg" says nothing about which is which.
+// Callers that need the real filename take it from path, not from this.
+async function collectMediaFiles(rootPath) {
+  const results = []
+
+  async function walk(dir) {
+    let entries
+    try {
+      entries = await fs.promises.readdir(dir, { withFileTypes: true })
+    } catch {
+      // Unreadable or vanished mid-scan: skip it rather than fail the whole scan
+      return
+    }
+
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        // Hidden and system folders are never what someone means to organize
+        if (entry.name.startsWith('.') || entry.name.startsWith('$')) continue
+        await walk(path.join(dir, entry.name))
+        continue
+      }
+      // isDirectory() is false for a symlink or junction, so this also stops
+      // the walk from looping through a link that points back up the tree
+      if (!entry.isFile()) continue
+
+      const ext = path.extname(entry.name).toLowerCase()
+      const isImage = IMAGE_EXTENSIONS.includes(ext)
+      if (!isImage && !VIDEO_EXTENSIONS.includes(ext)) continue
+
+      const fullPath = path.join(dir, entry.name)
+      results.push({
+        path: fullPath,
+        name: path.relative(rootPath, fullPath).split(path.sep).join('/'),
+        type: isImage ? 'image' : 'video',
+        ext,
+      })
     }
   }
-  return files.sort((a, b) => a.name.localeCompare(b.name))
+
+  await walk(rootPath)
+  // Sorting on the relative path groups each subfolder's files together
+  return results.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+// List supported media in a folder and its subfolders, sorted by relative path
+ipcMain.handle('media:getFiles', async (_event, folderPath) => {
+  return collectMediaFiles(folderPath)
 })
 
 // Move a file to a destination folder (handles name conflicts and cross-drive moves)
+//
+// Windows reports EBUSY/EPERM while any handle is still on the file. The
+// renderer releases the player and the strip thumbnail first, but the handle
+// is dropped asynchronously by Chromium's media stack, so a rename issued
+// immediately after can still lose the race. These retries cover that gap;
+// a lock held by something outside the app still fails, just a little later.
+const LOCK_CODES = ['EBUSY', 'EPERM', 'EACCES']
+const RETRY_DELAYS_MS = [50, 150, 300, 600]
+
+async function renameWithRetry(src, dest) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.promises.rename(src, dest)
+      return
+    } catch (err) {
+      if (!LOCK_CODES.includes(err.code) || attempt >= RETRY_DELAYS_MS.length) throw err
+      await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[attempt]))
+    }
+  }
+}
+
 async function moveWithFallback(src, dest) {
   try {
-    await fs.promises.rename(src, dest)
+    await renameWithRetry(src, dest)
   } catch (err) {
     if (err.code !== 'EXDEV') throw err
     // Cross-device: copy then delete
@@ -507,25 +570,6 @@ ipcMain.handle('image:convertHeic', async (_event, filePath) => {
   if (!(await isHeic(filePath))) throw new Error('This file is not HEIC')
   const outPath = uniqueOutputPath(filePath, 'converted', '.jpg')
   return wicToJpeg(filePath, outPath)
-})
-
-// Create a subfolder of the folder being organized.
-// mkdir is recursive so an existing folder is reused rather than erroring —
-// binding a hotkey to a folder that already exists is a perfectly good outcome.
-ipcMain.handle('folder:create', async (_event, { parentFolder, name }) => {
-  const clean = String(name || '').trim()
-  if (!clean) throw new Error('Folder name is empty')
-  if (/[\\/:*?"<>|]/.test(clean)) throw new Error('A folder name cannot contain \\ / : * ? " < > |')
-
-  const target = path.join(parentFolder, clean)
-
-  // The name is user input, so make sure it cannot climb out of the parent
-  if (path.dirname(path.resolve(target)) !== path.resolve(parentFolder)) {
-    throw new Error('Invalid folder name')
-  }
-
-  await fs.promises.mkdir(target, { recursive: true })
-  return target
 })
 
 // Open Windows Explorer with the file selected. An escape hatch for anything
