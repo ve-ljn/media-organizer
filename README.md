@@ -9,7 +9,7 @@ A keyboard-driven desktop app for quickly sorting images and videos into folders
 
 - **Hotkey sorting** — map up to 6 destination folders to keys 1–6. Press a key to move the current file and auto-advance. Optional: leave them unset if you only want to crop, rotate, or rate
 - **Separate tabs** for images and videos with individual file counters
-- **Subfolders included** — the chosen folder is scanned recursively, and files are listed by their path relative to it so identical basenames in different subfolders stay distinguishable
+- **Include subfolders** — a checkbox on the setup screen. Off, only files directly in the chosen folder count; on, everything beneath it does too, and the file count updates to match. The choice carries into the organizer, including when you jump between folders, and is remembered between sessions. With it on, files are listed by their path relative to the chosen folder so identical basenames in different subfolders stay distinguishable
 - **Preview strip** — a sidebar of thumbnails showing where you are, a few files back, and what's coming. Click or tab to any of them to jump. It follows the same order as the arrow keys, including the rating filter and wrap-around
 - **Star ratings** — rate files 1–5 stars (Alt+1–5) stored in JSON sidecar files
 - **Rating filter** — filter navigation to only 4★+ or 5★ files

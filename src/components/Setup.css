@@ -273,3 +273,43 @@
   opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* Scope of the scan: the file count above means whatever this is set to */
+.subfolders-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+  transition: border-color 0.15s;
+}
+
+.subfolders-toggle:hover {
+  border-color: var(--accent);
+}
+
+.subfolders-toggle input {
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.subfolders-toggle > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subfolders-note {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.file-count--counting {
+  opacity: 0.6;
+  font-style: italic;
+}

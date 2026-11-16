@@ -3,30 +3,42 @@ import './Setup.css'
 
 const KEY_LABELS = ['1', '2', '3', '4', '5', '6']
 
-export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSourceFolder, onStart }) {
+export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSourceFolder, includeSubfolders: initialIncludeSubfolders, onStart }) {
   const [hotkeys, setHotkeys] = useState(initialHotkeys)
 
   // Sync when the store finishes loading in the parent
   useEffect(() => { setHotkeys(initialHotkeys) }, [initialHotkeys])
   const [sourceFolder, setSourceFolder] = useState(initialSourceFolder)
   const [fileCount, setFileCount] = useState(null)
+  const [includeSubfolders, setIncludeSubfolders] = useState(initialIncludeSubfolders)
   const [error, setError] = useState(null)
+
+  useEffect(() => { setIncludeSubfolders(initialIncludeSubfolders) }, [initialIncludeSubfolders])
 
   // Sync when the saved folder finishes loading from the store (async on first mount)
   useEffect(() => {
-    if (initialSourceFolder) {
-      setSourceFolder(initialSourceFolder)
-      window.api.getMediaFiles(initialSourceFolder).then(files => setFileCount(files.length))
-    }
+    if (initialSourceFolder) setSourceFolder(initialSourceFolder)
   }, [initialSourceFolder])
+
+  // The count has to mean the same thing as the scope the checkbox sets, so it
+  // is recounted whenever either changes rather than only when a folder is
+  // picked. A scan of a deep tree can take a moment, so a stale result from a
+  // previous scope is discarded instead of overwriting a newer one.
+  useEffect(() => {
+    if (!sourceFolder) return
+    let current = true
+    setFileCount(null)
+    window.api.getMediaFiles(sourceFolder, includeSubfolders)
+      .then(files => { if (current) setFileCount(files.length) })
+      .catch(() => { if (current) setFileCount(0) })
+    return () => { current = false }
+  }, [sourceFolder, includeSubfolders])
 
   const selectSourceFolder = async () => {
     // Start where the current selection is, not wherever the shell last was
     const folder = await window.api.selectFolder(sourceFolder)
     if (!folder) return
     setSourceFolder(folder)
-    const files = await window.api.getMediaFiles(folder)
-    setFileCount(files.length)
   }
 
   const selectHotkeyFolder = async (index) => {
@@ -56,7 +68,7 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
     if (fileCount === 0) return setError('The selected folder contains no supported media files.')
     setError(null)
     try {
-      await onStart(sourceFolder, hotkeys)
+      await onStart(sourceFolder, hotkeys, includeSubfolders)
     } catch (e) {
       setError(`Failed to start: ${e.message}`)
     }
@@ -86,8 +98,27 @@ export default function Setup({ hotkeys: initialHotkeys, sourceFolder: initialSo
             {fileCount !== null && (
               <div className="file-count">{fileCount} file{fileCount !== 1 ? 's' : ''}</div>
             )}
+            {fileCount === null && sourceFolder && (
+              <div className="file-count file-count--counting">counting…</div>
+            )}
             <button className="btn-browse" onClick={selectSourceFolder}>Browse…</button>
           </div>
+
+          <label className="subfolders-toggle">
+            <input
+              type="checkbox"
+              checked={includeSubfolders}
+              onChange={e => setIncludeSubfolders(e.target.checked)}
+            />
+            <span>
+              Include subfolders
+              <span className="subfolders-note">
+                {includeSubfolders
+                  ? 'Counting this folder and everything inside it'
+                  : 'Counting only files directly in this folder'}
+              </span>
+            </span>
+          </label>
         </div>
 
         {/* Hotkeys grid */}

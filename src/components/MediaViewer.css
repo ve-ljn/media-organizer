@@ -184,25 +184,36 @@
 }
 
 /* Switch the folder being organized, from its hotkey pill */
-.hk-jump {
+/* Per-shortcut actions: clear the slot, open the folder, organize it */
+.hk-act {
   background: transparent;
   border: none;
   padding: 0 2px;
-  margin-left: 2px;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.15s;
+  opacity: 0.45;
+  transition: opacity 0.15s, color 0.15s;
 }
 
-.hk-jump:hover:not(:disabled) {
+.hk-act:hover:not(:disabled) {
   opacity: 1;
 }
 
-.hk-jump:disabled {
+.hk-act:disabled {
   opacity: 0.15;
   cursor: default;
+}
+
+/* Set apart from the other two: this one undoes something */
+.hk-act--clear {
+  color: var(--muted);
+  font-size: 11px;
+  margin-right: 1px;
+}
+
+.hk-act--clear:hover {
+  color: var(--danger);
 }
 
 /* The folder currently being organized */

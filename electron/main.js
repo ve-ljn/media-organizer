@@ -207,7 +207,7 @@ ipcMain.handle('dialog:selectFolder', async (_event, defaultPath) => {
 // filename: subfolders routinely hold files with identical basenames, and a
 // list of six identical "IMG_0001.jpg" says nothing about which is which.
 // Callers that need the real filename take it from path, not from this.
-async function collectMediaFiles(rootPath) {
+async function collectMediaFiles(rootPath, recursive) {
   const results = []
 
   async function walk(dir) {
@@ -221,6 +221,7 @@ async function collectMediaFiles(rootPath) {
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
+        if (!recursive) continue
         // Hidden and system folders are never what someone means to organize
         if (entry.name.startsWith('.') || entry.name.startsWith('$')) continue
         await walk(path.join(dir, entry.name))
@@ -249,9 +250,11 @@ async function collectMediaFiles(rootPath) {
   return results.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-// List supported media in a folder and its subfolders, sorted by relative path
-ipcMain.handle('media:getFiles', async (_event, folderPath) => {
-  return collectMediaFiles(folderPath)
+// List supported media in a folder, optionally including its subfolders.
+// The scope is the caller's choice and has to match what the setup screen
+// counted, so it is passed explicitly rather than inferred here.
+ipcMain.handle('media:getFiles', async (_event, folderPath, recursive) => {
+  return collectMediaFiles(folderPath, recursive === true)
 })
 
 // Move a file to a destination folder (handles name conflicts and cross-drive moves)
@@ -572,6 +575,15 @@ ipcMain.handle('image:convertHeic', async (_event, filePath) => {
   return wicToJpeg(filePath, outPath)
 })
 
+// Open a folder itself in Explorer.
+// Distinct from media:revealInFolder, which opens the PARENT with a file
+// selected — for a destination folder you want to be inside it, not above it.
+ipcMain.handle('folder:open', async (_event, folderPath) => {
+  const error = await shell.openPath(folderPath)
+  if (error) throw new Error(error)
+  return true
+})
+
 // Open Windows Explorer with the file selected. An escape hatch for anything
 // the viewer cannot render — from there the file can be opened elsewhere.
 ipcMain.handle('media:revealInFolder', async (_event, filePath) => {
@@ -596,6 +608,13 @@ ipcMain.handle('meta:getAllRatings', async (_event, filePaths) => {
     result[filePath] = readSidecar(filePath).rating || 0
   }
   return result
+})
+
+// Get/set the include-subfolders choice, remembered like the rest of setup
+ipcMain.handle('config:getIncludeSubfolders', () => store.get('includeSubfolders', false))
+ipcMain.handle('config:setIncludeSubfolders', (_event, value) => {
+  store.set('includeSubfolders', value === true)
+  return true
 })
 
 // Get/set persisted source folder

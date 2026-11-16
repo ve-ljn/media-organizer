@@ -608,6 +608,25 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
   // folder button, so creating one on the spot is still possible.
   const freeHotkeySlot = hotkeys.findIndex(hk => !hk?.folder)
 
+  // Unbinds the slot only. Deleting the folder from a bar of shortcuts would
+  // be far too easy to hit by accident, and is what Explorer is for.
+  const clearHotkey = useCallback(async (slot) => {
+    const name = hotkeys[slot]?.label || 'folder'
+    const updated = hotkeys.map((hk, i) =>
+      i === slot ? { folder: null, label: '' } : hk)
+    await onHotkeysChange?.(updated)
+    showToast(`Cleared hotkey ${slot + 1}`)
+    addLog(`Cleared hotkey ${slot + 1}  (${name})`, 'save')
+  }, [hotkeys, onHotkeysChange, showToast, addLog])
+
+  const openHotkeyFolder = useCallback(async (folder) => {
+    try {
+      await window.api.openFolder(folder)
+    } catch (e) {
+      showToast(`Could not open folder: ${e.message}`)
+    }
+  }, [showToast])
+
   const addFolderShortcut = useCallback(async () => {
     // Checked before opening the picker: letting someone browse and choose,
     // only to be told there is nowhere to bind it, wastes the interruption.
@@ -1374,15 +1393,32 @@ export default function MediaViewer({ files: initialFiles, hotkeys, sourceFolder
                 <div key={i} className={`hk-pill ${isCurrent ? 'hk-pill--current' : ''}`}>
                   <kbd>{i + 1}</kbd>
                   <span>{name}</span>
+
                   <button
-                    className="hk-jump"
+                    className="hk-act hk-act--clear"
+                    onClick={() => clearHotkey(i)}
+                    title={`Clear hotkey ${i + 1} — the folder itself is untouched`}
+                  >
+                    ✕
+                  </button>
+
+                  <button
+                    className="hk-act"
+                    onClick={() => openHotkeyFolder(hk.folder)}
+                    title={`Open ${name} in Windows Explorer`}
+                  >
+                    📁
+                  </button>
+
+                  <button
+                    className="hk-act"
                     onClick={() => onSwitchFolder?.(hk.folder)}
                     disabled={isCurrent}
                     title={isCurrent
                       ? `Already organizing ${name}`
                       : `Organize ${name} instead of the current folder`}
                   >
-                    📂
+                    🗄
                   </button>
                 </div>
               )
